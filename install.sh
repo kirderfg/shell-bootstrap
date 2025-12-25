@@ -224,10 +224,15 @@ STARTUP_EOF
     "padding": 0
   },
   "hooks": {
-    "PostStart": [
+    "SessionStart": [
       {
-        "type": "command",
-        "command": "${startup_script}"
+        "matcher": {},
+        "hooks": [
+          {
+            "type": "command",
+            "command": "${startup_script}"
+          }
+        ]
       }
     ]
   }
