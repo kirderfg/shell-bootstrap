@@ -216,6 +216,7 @@ STARTUP_EOF
   chmod +x "${startup_script}"
 
   # Create settings.json with statusLine and startup hook
+  # Note: SessionStart doesn't need a matcher (only PreToolUse/PostToolUse do)
   cat > "${settings_file}" <<SETTINGS_EOF
 {
   "statusLine": {
@@ -226,7 +227,6 @@ STARTUP_EOF
   "hooks": {
     "SessionStart": [
       {
-        "matcher": {},
         "hooks": [
           {
             "type": "command",
