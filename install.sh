@@ -11,8 +11,9 @@ if ! require_cmd sudo; then
   SUDO=""
 fi
 
-DEFAULT_ATUIN_USERNAME="fredrik-gustavsson"
+DEFAULT_ATUIN_USERNAME="kirderfg"
 DEFAULT_ATUIN_EMAIL="fredrik@thegustavssons.se"
+DEFAULT_PET_SNIPPETS_REPO="https://github.com/kirderfg/shell-snippets-private"
 
 BOOTSTRAP_HOME="${HOME}/.config/shell-bootstrap"
 BOOTSTRAP_SHARE="${HOME}/.local/share/shell-bootstrap"
@@ -29,6 +30,7 @@ fi
 
 ATUIN_USERNAME="${ATUIN_USERNAME:-$DEFAULT_ATUIN_USERNAME}"
 ATUIN_EMAIL="${ATUIN_EMAIL:-$DEFAULT_ATUIN_EMAIL}"
+PET_SNIPPETS_REPO="${PET_SNIPPETS_REPO:-$DEFAULT_PET_SNIPPETS_REPO}"
 
 append_block_once() {
   local file="$1"
@@ -40,16 +42,23 @@ append_block_once() {
   touch "$file"
 
   if grep -qF "$marker_begin" "$file"; then
-    # Replace existing managed block
-    perl -0777 -i -pe "s/\Q$marker_begin\E.*?\Q$marker_end\E/$marker_begin\n$content\n$marker_end/s" "$file"
-  else
-    {
-      echo ""
-      echo "$marker_begin"
-      echo "$content"
-      echo "$marker_end"
-    } >>"$file"
+    # Remove existing managed block, then re-add
+    local tmpfile
+    tmpfile="$(mktemp)"
+    awk -v begin="$marker_begin" -v end="$marker_end" '
+      $0 == begin { skip=1; next }
+      $0 == end { skip=0; next }
+      !skip { print }
+    ' "$file" > "$tmpfile"
+    mv "$tmpfile" "$file"
   fi
+
+  {
+    echo ""
+    echo "$marker_begin"
+    echo "$content"
+    echo "$marker_end"
+  } >>"$file"
 }
 
 install_apt_packages() {
@@ -62,11 +71,35 @@ install_apt_packages() {
     zsh tmux fzf \
     ripgrep fd-find bat jq \
     direnv zoxide \
-    fonts-firacode fonts-powerline \
-    git-delta || true
+    fonts-firacode fonts-powerline
 
   # Optional (nice-to-have) packages; don't hard-fail if not present in the image
-  ${SUDO} apt-get install -y yq gh || true
+  ${SUDO} apt-get install -y gh || true
+}
+
+install_delta() {
+  if require_cmd delta; then
+    log "delta already installed."
+    return
+  fi
+  log "Installing delta (git-delta) from GitHub releases..."
+  local arch tag asset url tmpdir
+  arch="$(uname -m)"
+  case "$arch" in
+    x86_64) arch="x86_64" ;;
+    aarch64|arm64) arch="aarch64" ;;
+    *) log "Unsupported arch for delta: $arch"; return ;;
+  esac
+
+  tag="$(curl -fsSL https://api.github.com/repos/dandavison/delta/releases/latest | jq -r .tag_name)"
+  asset="delta-${tag}-${arch}-unknown-linux-gnu.tar.gz"
+  url="https://github.com/dandavison/delta/releases/download/${tag}/${asset}"
+
+  tmpdir="$(mktemp -d)"
+  curl -fsSL "$url" -o "${tmpdir}/delta.tgz"
+  tar -xzf "${tmpdir}/delta.tgz" -C "${tmpdir}"
+  install -m 0755 "${tmpdir}/delta-${tag}-${arch}-unknown-linux-gnu/delta" "${BOOTSTRAP_BIN}/delta"
+  rm -rf "${tmpdir}"
 }
 
 install_atuin() {
@@ -85,6 +118,158 @@ install_claude_code() {
   fi
   log "Installing Claude Code..."
   curl -fsSL https://claude.ai/install.sh | bash
+}
+
+configure_claude_code() {
+  log "Configuring Claude Code..."
+
+  local claude_dir="${HOME}/.claude"
+  local settings_file="${claude_dir}/settings.json"
+  local statusline_script="${claude_dir}/statusline.sh"
+
+  mkdir -p "${claude_dir}"
+
+  # Create status line script with git info, cost tracking, and context usage
+  cat > "${statusline_script}" <<'STATUSLINE_EOF'
+#!/bin/bash
+# Claude Code Status Line - shell-bootstrap
+# Shows: model, git branch, cost, context usage
+
+input=$(cat)
+
+# Parse JSON input
+MODEL=$(echo "$input" | jq -r '.model.display_name // "Claude"')
+COST=$(echo "$input" | jq -r '.cost.total_cost_usd // 0')
+INPUT_TOKENS=$(echo "$input" | jq -r '.context_window.current_usage.input_tokens // 0')
+CONTEXT_SIZE=$(echo "$input" | jq -r '.context_window.context_window_size // 200000')
+
+# Format cost (show if > $0.001)
+COST_STR=""
+if (( $(echo "$COST > 0.001" | bc -l 2>/dev/null || echo 0) )); then
+  COST_STR=" | \$$(printf '%.3f' "$COST")"
+fi
+
+# Context usage percentage
+if [[ "$CONTEXT_SIZE" -gt 0 && "$INPUT_TOKENS" -gt 0 ]]; then
+  PCT=$(( INPUT_TOKENS * 100 / CONTEXT_SIZE ))
+  CTX_STR=" | ctx:${PCT}%"
+else
+  CTX_STR=""
+fi
+
+# Git branch (if in a repo)
+GIT_STR=""
+if git rev-parse --git-dir > /dev/null 2>&1; then
+  BRANCH=$(git branch --show-current 2>/dev/null)
+  if [[ -n "$BRANCH" ]]; then
+    # Check for uncommitted changes
+    if [[ -n $(git status --porcelain 2>/dev/null) ]]; then
+      GIT_STR=" | ${BRANCH}*"
+    else
+      GIT_STR=" | ${BRANCH}"
+    fi
+  fi
+fi
+
+# Assemble status line
+echo "[${MODEL}]${GIT_STR}${COST_STR}${CTX_STR}"
+STATUSLINE_EOF
+
+  chmod +x "${statusline_script}"
+
+  # Create or update settings.json
+  if [[ -f "${settings_file}" ]]; then
+    # Merge statusLine into existing settings
+    local tmp_settings
+    tmp_settings=$(mktemp)
+    jq --arg script "${statusline_script}" '. + {
+      "statusLine": {
+        "type": "command",
+        "command": $script,
+        "padding": 0
+      }
+    }' "${settings_file}" > "${tmp_settings}" 2>/dev/null || {
+      # If jq fails (invalid JSON), create fresh
+      cat > "${tmp_settings}" <<SETTINGS_EOF
+{
+  "statusLine": {
+    "type": "command",
+    "command": "${statusline_script}",
+    "padding": 0
+  }
+}
+SETTINGS_EOF
+    }
+    mv "${tmp_settings}" "${settings_file}"
+  else
+    # Create new settings file
+    cat > "${settings_file}" <<SETTINGS_EOF
+{
+  "statusLine": {
+    "type": "command",
+    "command": "${statusline_script}",
+    "padding": 0
+  }
+}
+SETTINGS_EOF
+  fi
+
+  # Create CLAUDE.md tips file if it doesn't exist in home
+  local tips_file="${HOME}/CLAUDE.md"
+  if [[ ! -f "${tips_file}" ]]; then
+    cat > "${tips_file}" <<'TIPS_EOF'
+# Claude Code Tips & Tricks
+
+## Quick Commands
+- `/help` - Show all slash commands
+- `/model` - Switch models (opus, sonnet, haiku)
+- `/compact` - Compress conversation context
+- `/clear` - Clear conversation history
+- `/cost` - Show session costs
+- `/doctor` - Diagnose setup issues
+
+## Keyboard Shortcuts
+- `Ctrl+C` - Cancel current operation
+- `Ctrl+D` - Exit Claude Code
+- `Escape` (2x) - Interrupt generation
+- `Tab` - Accept autocomplete suggestion
+
+## Pro Tips
+- Use `@file.txt` to include file contents in your prompt
+- Use `@folder/` to include directory structure
+- Prefix with `!` to run shell commands: `! git status`
+- Use `/vim` for vim-style keybindings
+- Run `claude --dangerously-skip-permissions` for unattended scripts (careful!)
+
+## Useful Patterns
+```bash
+# Quick one-liner
+claude "explain this error" < error.log
+
+# Code review
+claude "review this diff for issues" < <(git diff)
+
+# Generate commit message
+claude "write a commit message for these changes" < <(git diff --staged)
+
+# Explain a file
+claude "explain what this does" < complex_script.sh
+```
+
+## Cost Awareness
+- Haiku is cheapest for simple tasks
+- Sonnet balances cost/capability
+- Opus for complex reasoning (most expensive)
+- Use `/compact` when context gets large
+
+## Context Management
+- Large files eat context fast
+- Use specific file references instead of whole directories
+- `/clear` resets but loses conversation history
+- `/compact` preserves key info, reduces tokens
+TIPS_EOF
+    log "Created ~/CLAUDE.md with tips and tricks"
+  fi
 }
 
 install_starship() {
@@ -106,10 +291,9 @@ install_starship() {
       ;;
   esac
 
-  local tag ver asset url tmpdir
+  local tag asset url tmpdir
   tag="$(curl -fsSL https://api.github.com/repos/starship/starship/releases/latest | jq -r .tag_name)"
-  ver="${tag#v}"
-  asset="starship-${ver}-${arch}-unknown-linux-gnu.tar.gz"
+  asset="starship-${arch}-unknown-linux-gnu.tar.gz"
   url="https://github.com/starship/starship/releases/download/${tag}/${asset}"
 
   tmpdir="$(mktemp -d)"
@@ -119,15 +303,60 @@ install_starship() {
   rm -rf "${tmpdir}"
 }
 
+install_go() {
+  local required_major=1
+  local required_minor=21
+
+  if require_cmd go; then
+    local version
+    version="$(go version | grep -oP 'go\K[0-9]+\.[0-9]+')"
+    local major minor
+    major="${version%%.*}"
+    minor="${version#*.}"
+    if (( major > required_major || (major == required_major && minor >= required_minor) )); then
+      log "Go ${version} already installed (>= ${required_major}.${required_minor})."
+      return
+    fi
+    log "Go ${version} too old, need >= ${required_major}.${required_minor}. Installing newer version..."
+  else
+    log "Go not found. Installing..."
+  fi
+
+  local arch
+  arch="$(uname -m)"
+  case "$arch" in
+    x86_64) arch="amd64" ;;
+    aarch64|arm64) arch="arm64" ;;
+    *) log "Unsupported arch for Go: $arch"; return 1 ;;
+  esac
+
+  local go_version="1.23.4"
+  local tarball="go${go_version}.linux-${arch}.tar.gz"
+  local url="https://go.dev/dl/${tarball}"
+  local go_install_dir="${HOME}/.local/go"
+
+  log "Downloading Go ${go_version}..."
+  local tmpdir
+  tmpdir="$(mktemp -d)"
+  curl -fsSL "$url" -o "${tmpdir}/${tarball}"
+
+  rm -rf "${go_install_dir}"
+  mkdir -p "${go_install_dir}"
+  tar -xzf "${tmpdir}/${tarball}" -C "${go_install_dir}" --strip-components=1
+  rm -rf "${tmpdir}"
+
+  export PATH="${go_install_dir}/bin:${PATH}"
+  log "Go ${go_version} installed to ${go_install_dir}."
+}
+
 install_pet() {
   if require_cmd pet; then
     log "pet already installed."
     return
   fi
-  log "Installing pet (Go)..."
-  if ! require_cmd go; then
-    ${SUDO} apt-get install -y golang-go
-  fi
+  log "Installing pet..."
+  install_go
+  export PATH="${HOME}/.local/go/bin:${PATH}"
   GOBIN="${BOOTSTRAP_BIN}" go install github.com/knqyf263/pet@latest
 }
 
@@ -186,7 +415,7 @@ history_filter = [
   "(?i)token",
   "(?i)apikey",
   "(?i)api_key",
-  "(?i)bearer\\s+[a-z0-9\\._\\-]+",
+  "(?i)bearer\\\\s+[a-z0-9\\\\._\\\\-]+",
   "(?i)ghp_[A-Za-z0-9_]+",
   "(?i)github_pat_[A-Za-z0-9_]+",
   "(?i)AZURE_.*KEY",
@@ -201,7 +430,20 @@ EOF
     atuin sync
     set -e
   else
-    log "Atuin installed. To enable sync: atuin register/login + atuin key + atuin sync"
+    log "Atuin installed. Set ATUIN_KEY + ATUIN_PASSWORD in secrets.env, then re-run."
+  fi
+}
+
+configure_git() {
+  log "Configuring git to use delta..."
+  if command -v delta >/dev/null 2>&1; then
+    git config --global core.pager delta
+    git config --global interactive.diffFilter "delta --color-only"
+    git config --global delta.navigate true
+    git config --global delta.line-numbers true
+    git config --global delta.side-by-side false
+    git config --global merge.conflictstyle diff3
+    git config --global diff.colorMoved default
   fi
 }
 
@@ -224,8 +466,8 @@ EOF
     perl -i -pe 's/editor = "nano"/editor = "code --wait"/' "${HOME}/.config/pet/config.toml" || true
   fi
 
-  # Optional: clone private snippets repo and symlink snippet.toml
-  if [[ -n "${PET_SNIPPETS_REPO:-}" && -n "${PET_SNIPPETS_TOKEN:-}" ]]; then
+  # Clone private snippets repo and symlink snippet.toml
+  if [[ -n "${PET_SNIPPETS_TOKEN:-}" ]]; then
     local_repo="${HOME}/.config/pet/snippets-repo"
     mkdir -p "$(dirname "$local_repo")"
 
@@ -266,7 +508,7 @@ EOF
       log "Repo cloned but snippet.toml not found at repo root; expected ${local_repo}/snippet.toml"
     fi
   else
-    log "Private pet repo not configured (set PET_SNIPPETS_REPO + PET_SNIPPETS_TOKEN to enable)."
+    log "Pet snippets repo not configured (set PET_SNIPPETS_TOKEN in secrets.env to enable)."
   fi
 }
 
@@ -275,8 +517,28 @@ write_bootstrap_zshrc() {
   cat > "${BOOTSTRAP_HOME}/zshrc" <<EOF
 # shell-bootstrap zsh config
 
+# ============================================================================
+# Zsh options for better usability
+# ============================================================================
+setopt AUTO_CD              # cd by typing directory name
+setopt AUTO_PUSHD           # push directories onto stack
+setopt PUSHD_IGNORE_DUPS    # don't push duplicates
+setopt PUSHD_SILENT         # don't print directory stack
+setopt CORRECT              # command auto-correction
+setopt EXTENDED_GLOB        # extended globbing
+setopt NO_BEEP              # no beeping
+setopt HIST_IGNORE_DUPS     # ignore duplicate history entries
+setopt HIST_IGNORE_SPACE    # ignore commands starting with space
+setopt SHARE_HISTORY        # share history between sessions
+setopt APPEND_HISTORY       # append to history file
+setopt INC_APPEND_HISTORY   # add commands immediately
+setopt INTERACTIVE_COMMENTS # allow comments in interactive shell
+
+# Case-insensitive completion
+zstyle ':completion:*' matcher-list 'm:{a-zA-Z}={A-Za-z}'
+
 # Ensure local bins are available
-export PATH="${BOOTSTRAP_BIN}:\$HOME/.atuin/bin:\$PATH"
+export PATH="${BOOTSTRAP_BIN}:\$HOME/.local/go/bin:\$HOME/.atuin/bin:\$PATH"
 
 # Quality-of-life aliases for Ubuntu naming
 if command -v batcat >/dev/null 2>&1 && ! command -v bat >/dev/null 2>&1; then
@@ -287,6 +549,98 @@ if command -v fdfind >/dev/null 2>&1 && ! command -v fd >/dev/null 2>&1; then
 fi
 
 export EDITOR="\${EDITOR:-nano}"
+
+# ============================================================================
+# Convenience aliases
+# ============================================================================
+
+# Better ls defaults: long format, human sizes, show hidden (except . ..), classify
+alias ls='ls --color=auto -F'
+alias ll='ls -lAFh --color=auto'
+alias la='ls -lAFh --color=auto'
+alias l='ls -lFh --color=auto'
+alias lt='ls -lAFht --color=auto'    # sorted by time, newest first
+alias lS='ls -lAFhS --color=auto'    # sorted by size, largest first
+
+# Safer defaults for destructive commands
+alias rm='rm -I'
+alias cp='cp -iv'
+alias mv='mv -iv'
+
+# Directory navigation
+alias ..='cd ..'
+alias ...='cd ../..'
+alias ....='cd ../../..'
+alias mkdir='mkdir -pv'
+
+# Grep with color
+alias grep='grep --color=auto'
+alias egrep='egrep --color=auto'
+alias fgrep='fgrep --color=auto'
+
+# Disk usage helpers
+alias df='df -h'
+alias du='du -h'
+alias duf='du -sh * | sort -h'
+
+# Quick history search
+alias h='history | tail -50'
+
+# Git shortcuts
+alias gs='git status'
+alias gd='git diff'
+alias gds='git diff --staged'
+alias gl='git log --oneline -20'
+alias gp='git pull'
+
+# Python
+alias py='python3'
+alias pip='pip3'
+
+# Docker shortcuts (if docker is available)
+if command -v docker >/dev/null 2>&1; then
+  alias dps='docker ps'
+  alias dpsa='docker ps -a'
+  alias di='docker images'
+fi
+
+# ============================================================================
+# Utility functions
+# ============================================================================
+
+# Create directory and cd into it
+take() { mkdir -p "\$1" && cd "\$1"; }
+
+# Extract various archive formats
+extract() {
+  if [[ -f "\$1" ]]; then
+    case "\$1" in
+      *.tar.bz2) tar xjf "\$1" ;;
+      *.tar.gz)  tar xzf "\$1" ;;
+      *.tar.xz)  tar xJf "\$1" ;;
+      *.bz2)     bunzip2 "\$1" ;;
+      *.gz)      gunzip "\$1" ;;
+      *.tar)     tar xf "\$1" ;;
+      *.tbz2)    tar xjf "\$1" ;;
+      *.tgz)     tar xzf "\$1" ;;
+      *.zip)     unzip "\$1" ;;
+      *.Z)       uncompress "\$1" ;;
+      *.7z)      7z x "\$1" ;;
+      *)         echo "Cannot extract '\$1'" ;;
+    esac
+  else
+    echo "'\$1' is not a valid file"
+  fi
+}
+
+# Quick find file by name
+ff() { find . -type f -iname "*\$1*" 2>/dev/null; }
+
+# Quick find directory by name
+fd_dir() { find . -type d -iname "*\$1*" 2>/dev/null; }
+
+# Show PATH entries one per line
+path() { echo "\$PATH" | tr ':' '\n'; }
 
 # zoxide
 if command -v zoxide >/dev/null 2>&1; then
@@ -376,10 +730,14 @@ export PATH="$HOME/.local/bin:$HOME/.atuin/bin:$PATH"
 
 try_set_default_shell_zsh() {
   if require_cmd zsh && require_cmd chsh; then
-    log "Attempting to set default shell to zsh (may fail in containers/Codespaces)..."
-    set +e
-    chsh -s "$(command -v zsh)" "$USER" >/dev/null 2>&1
-    set -e
+    local current_shell
+    current_shell="$(getent passwd "$USER" | cut -d: -f7)"
+    if [[ "$current_shell" == "$(command -v zsh)" ]]; then
+      log "Default shell is already zsh."
+      return
+    fi
+    log "To set zsh as your default shell, run: chsh -s \$(which zsh)"
+    log "(The .bashrc fallback will auto-exec zsh for interactive sessions anyway.)"
   fi
 }
 
@@ -390,8 +748,72 @@ See the repo's zsh_readme.md for full documentation.
 EOF
 }
 
+generate_secrets_template() {
+  local secrets_file="${BOOTSTRAP_HOME}/secrets.env"
+  if [[ -f "$secrets_file" ]]; then
+    return
+  fi
+
+  log "Generating secrets.env template..."
+  cat > "$secrets_file" <<'EOF'
+# Shell Bootstrap Secrets
+# Fill in these values and re-run install.sh to enable sync features.
+# This file is sourced by the installer and zshrc.
+
+# ============================================================================
+# ATUIN - Shell history sync (https://atuin.sh)
+# ============================================================================
+# Get your key from a machine where you're logged in: atuin key
+# Or register at: https://atuin.sh
+#
+# export ATUIN_PASSWORD="your_atuin_password"
+# export ATUIN_KEY="your_atuin_encryption_key"
+
+# ============================================================================
+# PET SNIPPETS - Shell snippet sync
+# ============================================================================
+# GitHub Personal Access Token for private snippets repo.
+#
+# Create a fine-grained token at: https://github.com/settings/tokens?type=beta
+#   - Repository access: Only select repositories -> shell-snippets-private
+#   - Permissions: Contents -> Read and write
+#
+# Or classic token at: https://github.com/settings/tokens/new
+#   - Select scope: repo
+#
+# export PET_SNIPPETS_TOKEN="ghp_your_token_here"
+EOF
+}
+
+print_next_steps() {
+  local secrets_file="${BOOTSTRAP_HOME}/secrets.env"
+  local missing=()
+
+  if [[ -z "${ATUIN_KEY:-}" || -z "${ATUIN_PASSWORD:-}" ]]; then
+    missing+=("Atuin sync")
+  fi
+  if [[ -z "${PET_SNIPPETS_TOKEN:-}" ]]; then
+    missing+=("Pet snippets sync")
+  fi
+
+  echo ""
+  log "============================================"
+  log "Done! Run: exec zsh"
+  log "============================================"
+
+  if [[ ${#missing[@]} -gt 0 ]]; then
+    echo ""
+    log "Optional: To enable ${missing[*]}:"
+    log "  1. Edit ${secrets_file}"
+    log "  2. Uncomment and fill in the values"
+    log "  3. Re-run: ~/shell-bootstrap/install.sh"
+  fi
+}
+
 main() {
+  generate_secrets_template
   install_apt_packages
+  install_delta
   install_atuin
   install_starship
   install_pet
@@ -400,15 +822,15 @@ main() {
 
   configure_starship
   configure_atuin
+  configure_git
   configure_pet
+  configure_claude_code
 
   write_bootstrap_zshrc
   wire_user_shell_rc_files
   try_set_default_shell_zsh
   install_readme_locally
 
-  log "Done."
-  log "Open a new terminal (or run: exec zsh)."
-  log "If this is your first Atuin machine: atuin register -u ${ATUIN_USERNAME} -e ${ATUIN_EMAIL}"
+  print_next_steps
 }
 main "$@"
