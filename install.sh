@@ -126,6 +126,7 @@ configure_claude_code() {
   local claude_dir="${HOME}/.claude"
   local settings_file="${claude_dir}/settings.json"
   local statusline_script="${claude_dir}/statusline.sh"
+  local startup_script="${claude_dir}/startup-tips.sh"
 
   mkdir -p "${claude_dir}"
 
@@ -177,69 +178,90 @@ STATUSLINE_EOF
 
   chmod +x "${statusline_script}"
 
-  # Create or update settings.json
-  if [[ -f "${settings_file}" ]]; then
-    # Merge statusLine into existing settings
-    local tmp_settings
-    tmp_settings=$(mktemp)
-    jq --arg script "${statusline_script}" '. + {
-      "statusLine": {
-        "type": "command",
-        "command": $script,
-        "padding": 0
-      }
-    }' "${settings_file}" > "${tmp_settings}" 2>/dev/null || {
-      # If jq fails (invalid JSON), create fresh
-      cat > "${tmp_settings}" <<SETTINGS_EOF
-{
-  "statusLine": {
-    "type": "command",
-    "command": "${statusline_script}",
-    "padding": 0
-  }
-}
-SETTINGS_EOF
-    }
-    mv "${tmp_settings}" "${settings_file}"
-  else
-    # Create new settings file
-    cat > "${settings_file}" <<SETTINGS_EOF
-{
-  "statusLine": {
-    "type": "command",
-    "command": "${statusline_script}",
-    "padding": 0
-  }
-}
-SETTINGS_EOF
-  fi
+  # Create startup tips script that shows a random tip
+  cat > "${startup_script}" <<'STARTUP_EOF'
+#!/bin/bash
+# Claude Code Startup Tips - shell-bootstrap
+# Shows a random tip when Claude starts
 
-  # Create CLAUDE.md tips file if it doesn't exist in home
+TIPS=(
+  "Use @file.txt to include file contents in your prompt"
+  "Use /compact to save context when conversations get long"
+  "Use /model haiku for simple tasks (cheaper & faster)"
+  "Press Escape twice to interrupt generation"
+  "Use @folder/ to include directory structure"
+  "Prefix with ! to run shell commands: ! git status"
+  "Use /cost to check your session spending"
+  "Use Ctrl+C to cancel, Ctrl+D to exit"
+  "Pipe input: claude 'explain this' < error.log"
+  "Use /clear to reset conversation (loses history)"
+  "Use /doctor to diagnose setup issues"
+  "Review diffs: claude 'review this' < <(git diff)"
+  "Generate commits: claude 'write commit msg' < <(git diff --staged)"
+  "Use /vim for vim-style keybindings"
+  "See ~/CLAUDE.md for more tips and tricks"
+)
+
+# Pick a random tip
+TIP="${TIPS[$RANDOM % ${#TIPS[@]}]}"
+
+# Print with formatting
+echo ""
+echo -e "\033[1;36m╭─────────────────────────────────────────────────────────────╮\033[0m"
+echo -e "\033[1;36m│\033[0m \033[1;33m💡 Tip:\033[0m ${TIP}"
+echo -e "\033[1;36m╰─────────────────────────────────────────────────────────────╯\033[0m"
+echo ""
+STARTUP_EOF
+
+  chmod +x "${startup_script}"
+
+  # Create settings.json with statusLine and startup hook
+  cat > "${settings_file}" <<SETTINGS_EOF
+{
+  "statusLine": {
+    "type": "command",
+    "command": "${statusline_script}",
+    "padding": 0
+  },
+  "hooks": {
+    "PostStart": [
+      {
+        "type": "command",
+        "command": "${startup_script}"
+      }
+    ]
+  }
+}
+SETTINGS_EOF
+
+  # Create CLAUDE.md tips file in home directory
   local tips_file="${HOME}/CLAUDE.md"
-  if [[ ! -f "${tips_file}" ]]; then
-    cat > "${tips_file}" <<'TIPS_EOF'
+  cat > "${tips_file}" <<'TIPS_EOF'
 # Claude Code Tips & Tricks
 
 ## Quick Commands
-- `/help` - Show all slash commands
-- `/model` - Switch models (opus, sonnet, haiku)
-- `/compact` - Compress conversation context
-- `/clear` - Clear conversation history
-- `/cost` - Show session costs
-- `/doctor` - Diagnose setup issues
+| Command | Action |
+|---------|--------|
+| `/help` | Show all slash commands |
+| `/model` | Switch models (opus, sonnet, haiku) |
+| `/compact` | Compress conversation context |
+| `/clear` | Clear conversation history |
+| `/cost` | Show session costs |
+| `/doctor` | Diagnose setup issues |
+| `/vim` | Enable vim keybindings |
 
 ## Keyboard Shortcuts
-- `Ctrl+C` - Cancel current operation
-- `Ctrl+D` - Exit Claude Code
-- `Escape` (2x) - Interrupt generation
-- `Tab` - Accept autocomplete suggestion
+| Shortcut | Action |
+|----------|--------|
+| `Ctrl+C` | Cancel current operation |
+| `Ctrl+D` | Exit Claude Code |
+| `Escape` (2x) | Interrupt generation |
+| `Tab` | Accept autocomplete |
 
-## Pro Tips
-- Use `@file.txt` to include file contents in your prompt
-- Use `@folder/` to include directory structure
-- Prefix with `!` to run shell commands: `! git status`
-- Use `/vim` for vim-style keybindings
-- Run `claude --dangerously-skip-permissions` for unattended scripts (careful!)
+## Include Files in Prompts
+- `@file.txt` - Include file contents
+- `@folder/` - Include directory structure
+- `! command` - Run shell command inline
 
 ## Useful Patterns
 ```bash
@@ -250,26 +272,37 @@ claude "explain this error" < error.log
 claude "review this diff for issues" < <(git diff)
 
 # Generate commit message
-claude "write a commit message for these changes" < <(git diff --staged)
+claude "write a commit message" < <(git diff --staged)
 
 # Explain a file
-claude "explain what this does" < complex_script.sh
+claude "explain what this does" < script.sh
+
+# Continue last session
+claude -c
 ```
 
 ## Cost Awareness
-- Haiku is cheapest for simple tasks
-- Sonnet balances cost/capability
-- Opus for complex reasoning (most expensive)
-- Use `/compact` when context gets large
+| Model | Best For | Cost |
+|-------|----------|------|
+| Haiku | Simple tasks, quick answers | $ |
+| Sonnet | Balanced capability | $$ |
+| Opus | Complex reasoning | $$$ |
 
-## Context Management
-- Large files eat context fast
-- Use specific file references instead of whole directories
+Use `/compact` when context gets large to reduce token usage.
+
+## Context Management Tips
+- Large files consume context quickly
+- Reference specific files instead of whole directories
 - `/clear` resets but loses conversation history
-- `/compact` preserves key info, reduces tokens
+- `/compact` preserves key info while reducing tokens
+- Watch the ctx:% in your status line
+
+## Pro Tips
+- Run `claude --dangerously-skip-permissions` for unattended scripts
+- Use `/init` to create a CLAUDE.md for your project
+- Check `/config` for all available settings
 TIPS_EOF
-    log "Created ~/CLAUDE.md with tips and tricks"
-  fi
+  log "Created ~/CLAUDE.md with tips and tricks"
 }
 
 install_starship() {
