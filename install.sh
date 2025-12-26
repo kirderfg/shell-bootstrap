@@ -789,6 +789,9 @@ map ctrl+shift+e launch --location=vsplit --cwd=current yazi
 # Reload config
 map ctrl+shift+f5 load_config_file
 
+# Show shortcuts help (F1)
+map f1 launch --type=overlay --title=Shortcuts sh -c 'cat ~/.config/kitty/shortcuts.txt; read -n 1'
+
 # ============================================================================
 # Startup session
 # ============================================================================
@@ -854,6 +857,35 @@ layout splits
 cd ~
 launch --title main zsh
 SESSION
+
+  # Create shortcuts quick reference
+  cat > "${kitty_conf_dir}/shortcuts.txt" <<'SHORTCUTS'
+
+  ╭──────────────────────────────────────────────────────────────╮
+  │                    KITTY SHORTCUTS                           │
+  ├──────────────────────────────────────────────────────────────┤
+  │  Ctrl+Shift+\      │  Vertical split                        │
+  │  Ctrl+Shift+-      │  Horizontal split                      │
+  │  Ctrl+Shift+W      │  Close split                           │
+  │  Ctrl+Shift+Z      │  Toggle fullscreen                     │
+  │  Ctrl+Shift+E      │  Open file manager (yazi)              │
+  ├──────────────────────────────────────────────────────────────┤
+  │  Ctrl+Shift+H/J/K/L│  Navigate splits (vim style)           │
+  │  Ctrl+Alt+H/J/K/L  │  Resize splits                         │
+  ├──────────────────────────────────────────────────────────────┤
+  │  Ctrl+Shift+T      │  New tab                               │
+  │  Ctrl+Alt+1-5      │  Switch to tab 1-5                     │
+  │  Ctrl+Shift+←/→    │  Previous/Next tab                     │
+  ├──────────────────────────────────────────────────────────────┤
+  │  Ctrl+R            │  Search history (Atuin)                │
+  │  Ctrl+S            │  Search snippets (pet)                 │
+  │  ESC / Ctrl+[      │  Vi normal mode                        │
+  │  F1                │  Show this help                        │
+  ╰──────────────────────────────────────────────────────────────╯
+
+                    Press any key to close...
+
+SHORTCUTS
 
   log "Kitty configured. Use 'kitty' for normal or 'kitty --session ~/.config/kitty/dev.session' for dev layout"
 }
@@ -1026,6 +1058,39 @@ setopt SHARE_HISTORY        # share history between sessions
 setopt APPEND_HISTORY       # append to history file
 setopt INC_APPEND_HISTORY   # add commands immediately
 setopt INTERACTIVE_COMMENTS # allow comments in interactive shell
+
+# ============================================================================
+# Vi mode
+# ============================================================================
+bindkey -v                  # Enable vi mode
+export KEYTIMEOUT=1         # Reduce mode switch delay (10ms)
+
+# Better vi mode indicators and bindings
+bindkey '^?' backward-delete-char  # Backspace works in insert mode
+bindkey '^h' backward-delete-char  # Ctrl+H backspace
+bindkey '^w' backward-kill-word    # Ctrl+W delete word
+bindkey '^a' beginning-of-line     # Ctrl+A start of line
+bindkey '^e' end-of-line           # Ctrl+E end of line
+bindkey '^k' kill-line             # Ctrl+K kill to end
+bindkey '^u' backward-kill-line    # Ctrl+U kill to start
+bindkey '^r' history-incremental-search-backward  # Ctrl+R search (works with atuin too)
+bindkey -M vicmd 'k' up-line-or-history
+bindkey -M vicmd 'j' down-line-or-history
+
+# Change cursor shape based on vi mode
+function zle-keymap-select {
+  if [[ \$KEYMAP == vicmd ]] || [[ \$1 == 'block' ]]; then
+    echo -ne '\e[1 q'  # Block cursor for normal mode
+  else
+    echo -ne '\e[5 q'  # Beam cursor for insert mode
+  fi
+}
+zle -N zle-keymap-select
+
+function zle-line-init {
+  echo -ne '\e[5 q'  # Start with beam cursor
+}
+zle -N zle-line-init
 
 # Case-insensitive completion
 zstyle ':completion:*' matcher-list 'm:{a-zA-Z}={A-Za-z}'
