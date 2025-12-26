@@ -71,7 +71,8 @@ install_apt_packages() {
     zsh tmux fzf \
     ripgrep fd-find bat jq \
     direnv zoxide \
-    fonts-firacode fonts-powerline
+    fonts-firacode fonts-powerline \
+    libxcb-xkb1 libxkbcommon-x11-0 libxcb-cursor0 libxcb-keysyms1 libxcb-shape0
 
   # Optional (nice-to-have) packages; don't hard-fail if not present in the image
   ${SUDO} apt-get install -y gh || true
@@ -812,9 +813,6 @@ clipboard_control write-clipboard write-primary read-clipboard read-primary
 # Slightly reduce input delay for snappier feel
 input_delay 1
 repaint_delay 8
-
-# Single instance for faster subsequent window opens
-single_instance yes
 KITTY_CONF
 
   # Create a launch script for the dev layout
