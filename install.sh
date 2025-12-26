@@ -797,24 +797,6 @@ startup_session ~/.config/kitty/startup.session
 shell zsh
 KITTY_CONF
 
-  # Create startup session - main terminal with optional file explorer
-  cat > "${kitty_conf_dir}/startup.session" <<'SESSION'
-# Kitty startup session - shell-bootstrap
-# Layout: file explorer on left (narrow), main terminal on right
-
-layout splits
-cd ~
-
-# Main terminal (takes focus)
-launch --title main zsh
-focus
-
-# To auto-open yazi on left, uncomment these lines:
-# launch --location=vsplit --title files yazi
-# resize_window narrower 3
-# neighboring_window right
-SESSION
-
   # Create a launch script for the dev layout
   cat > "${kitty_conf_dir}/dev-layout.sh" <<'DEVLAYOUT'
 #!/bin/bash
@@ -824,37 +806,35 @@ DEVLAYOUT
   chmod +x "${kitty_conf_dir}/dev-layout.sh"
 
   # Dev session with file explorer
+  # Note: Session files have limited commands - use launch with --location for splits
   cat > "${kitty_conf_dir}/dev.session" <<'DEVSESSION'
 # Dev layout: file explorer left, main terminal right, small bottom pane
+# After launch, use Ctrl+Alt+H to make left pane narrower
 
+new_tab dev
 layout splits
 cd ~
 
-# Start main terminal
+# Main terminal on the right (launched first, takes most space)
 launch --title main zsh
 
-# Split left for file explorer (vsplit creates left pane)
-launch --location=vsplit --title files yazi
+# File explorer on the left (vsplit from main)
+launch --location=vsplit --title files --bias=25 yazi
 
-# Make file explorer narrower (repeat to make it smaller)
-resize_window narrower
-resize_window narrower
-resize_window narrower
-
-# Go back to main terminal
-neighboring_window right
-
-# Create bottom pane for quick commands
-launch --location=hsplit --title quick zsh
-
-# Make bottom pane shorter
-resize_window shorter
-resize_window shorter
-
-# Focus main terminal
-neighboring_window up
-focus
+# Quick commands pane at bottom of main area
+launch --location=hsplit --title quick --bias=20 zsh
 DEVSESSION
+
+  # Simpler startup session
+  cat > "${kitty_conf_dir}/startup.session" <<'SESSION'
+# Kitty startup session - shell-bootstrap
+# Just a clean zsh terminal
+
+new_tab home
+layout splits
+cd ~
+launch --title main zsh
+SESSION
 
   log "Kitty configured. Use 'kitty' for normal or 'kitty --session ~/.config/kitty/dev.session' for dev layout"
 }
