@@ -797,19 +797,24 @@ startup_session ~/.config/kitty/startup.session
 shell zsh
 
 # ============================================================================
-# WSL-specific settings (suppress harmless warnings)
+# WSL Compatibility (keeps features, fixes issues)
 # ============================================================================
-# Disable systemd integration (not fully supported in WSL)
+
+# Force X11 (Wayland not fully supported in WSL)
 linux_display_server x11
 
-# Disable update checks
+# Skip update checks (reduces startup noise)
 update_check_interval 0
 
-# Disable audio bell (no audio in WSL typically)
-enable_audio_bell no
-
-# Wayland clipboard workaround
+# WSL clipboard fix
 clipboard_control write-clipboard write-primary read-clipboard read-primary
+
+# Slightly reduce input delay for snappier feel
+input_delay 1
+repaint_delay 8
+
+# Single instance for faster subsequent window opens
+single_instance yes
 KITTY_CONF
 
   # Create a launch script for the dev layout
