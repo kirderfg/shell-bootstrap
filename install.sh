@@ -798,21 +798,22 @@ startup_session ~/.config/kitty/startup.session
 shell zsh
 
 # ============================================================================
-# WSL Compatibility (keeps features, fixes issues)
+# WSLg Performance (native Wayland for speed)
 # ============================================================================
 
-# Force X11 (Wayland not fully supported in WSL)
-linux_display_server x11
+# Use native Wayland (faster than X11/XWayland)
+linux_display_server wayland
 
-# Skip update checks (reduces startup noise)
+# Skip update checks
 update_check_interval 0
 
-# WSL clipboard fix
-clipboard_control write-clipboard write-primary read-clipboard read-primary
+# Wayland clipboard
+clipboard_control write-clipboard read-clipboard
 
-# Slightly reduce input delay for snappier feel
-input_delay 1
-repaint_delay 8
+# Reduce input latency
+input_delay 0
+repaint_delay 6
+sync_to_monitor no
 KITTY_CONF
 
   # Create a launch script for the dev layout
