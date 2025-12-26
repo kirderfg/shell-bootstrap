@@ -795,6 +795,21 @@ startup_session ~/.config/kitty/startup.session
 
 # Shell
 shell zsh
+
+# ============================================================================
+# WSL-specific settings (suppress harmless warnings)
+# ============================================================================
+# Disable systemd integration (not fully supported in WSL)
+linux_display_server x11
+
+# Disable update checks
+update_check_interval 0
+
+# Disable audio bell (no audio in WSL typically)
+enable_audio_bell no
+
+# Wayland clipboard workaround
+clipboard_control write-clipboard write-primary read-clipboard read-primary
 KITTY_CONF
 
   # Create a launch script for the dev layout
