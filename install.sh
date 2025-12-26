@@ -178,38 +178,49 @@ STATUSLINE_EOF
 
   chmod +x "${statusline_script}"
 
-  # Create startup tips script that shows a random tip
+  # Create startup tips script that shows 5 random tips
   cat > "${startup_script}" <<'STARTUP_EOF'
 #!/bin/bash
 # Claude Code Startup Tips - shell-bootstrap
-# Shows a random tip when Claude starts
+# Shows 5 random tips when Claude starts
 
 TIPS=(
-  "Use @file.txt to include file contents in your prompt"
-  "Use /compact to save context when conversations get long"
-  "Use /model haiku for simple tasks (cheaper & faster)"
-  "Press Escape twice to interrupt generation"
-  "Use @folder/ to include directory structure"
-  "Prefix with ! to run shell commands: ! git status"
-  "Use /cost to check your session spending"
-  "Use Ctrl+C to cancel, Ctrl+D to exit"
-  "Pipe input: claude 'explain this' < error.log"
-  "Use /clear to reset conversation (loses history)"
-  "Use /doctor to diagnose setup issues"
-  "Review diffs: claude 'review this' < <(git diff)"
-  "Generate commits: claude 'write commit msg' < <(git diff --staged)"
-  "Use /vim for vim-style keybindings"
-  "See ~/CLAUDE.md for more tips and tricks"
+  "@file.txt - include file contents in prompt"
+  "@folder/ - include directory structure"
+  "/compact - compress context when it gets large"
+  "/model haiku - cheaper & faster for simple tasks"
+  "/model opus - best reasoning (costs more)"
+  "/cost - check your session spending"
+  "/clear - reset conversation (loses history)"
+  "/doctor - diagnose setup issues"
+  "/vim - enable vim keybindings"
+  "Escape (2x) - interrupt generation"
+  "Ctrl+C cancel, Ctrl+D exit"
+  "! cmd - run shell inline: ! git status"
+  "claude 'prompt' < file - pipe input"
+  "claude -c - continue last session"
+  "claude -r - resume with history"
+  "claude 'review' < <(git diff) - review changes"
+  "claude 'commit msg' < <(git diff --staged)"
+  "Tab - accept autocomplete suggestion"
+  "~/CLAUDE.md - full tips reference"
+  "/init - create project CLAUDE.md"
 )
 
-# Pick a random tip
-TIP="${TIPS[$RANDOM % ${#TIPS[@]}]}"
+# Shuffle and pick 5 unique tips
+SELECTED=()
+INDICES=($(shuf -i 0-$((${#TIPS[@]}-1)) -n 5))
+for i in "${INDICES[@]}"; do
+  SELECTED+=("${TIPS[$i]}")
+done
 
 # Print with formatting
 echo ""
-echo -e "\033[1;36m╭─────────────────────────────────────────────────────────────╮\033[0m"
-echo -e "\033[1;36m│\033[0m \033[1;33m💡 Tip:\033[0m ${TIP}"
-echo -e "\033[1;36m╰─────────────────────────────────────────────────────────────╯\033[0m"
+echo -e "\033[1;36m┌─ 💡 Quick Tips ─────────────────────────────────────────────┐\033[0m"
+for tip in "${SELECTED[@]}"; do
+  echo -e "\033[1;36m│\033[0m  \033[1;33m•\033[0m ${tip}"
+done
+echo -e "\033[1;36m└─────────────────────────────────────────────────────────────┘\033[0m"
 echo ""
 STARTUP_EOF
 
