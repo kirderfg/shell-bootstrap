@@ -6,10 +6,12 @@ One-command shell setup for WSL Ubuntu and GitHub Codespaces. Installs and confi
 
 | Tool | Purpose |
 |------|---------|
+| **Kitty** | GPU-accelerated terminal with splits |
 | **zsh** | Primary shell with sensible defaults |
 | **Starship** | Fast, customizable prompt |
 | **Atuin** | Searchable shell history with sync |
 | **pet** | Snippet manager (Ctrl+S to search) |
+| **yazi** | Blazing fast file manager |
 | **zoxide** | Smart directory jumping (`z`) |
 | **fzf** | Fuzzy finder |
 | **ripgrep** | Fast code search (`rg`) |
@@ -79,6 +81,19 @@ exec zsh
 | `z <dir>` | Jump to directory (zoxide) |
 | `zi` | Interactive directory picker |
 
+### Kitty Terminal Shortcuts
+
+| Shortcut | Action |
+|----------|--------|
+| `Ctrl+Shift+\` | Vertical split |
+| `Ctrl+Shift+-` | Horizontal split |
+| `Ctrl+Shift+H/J/K/L` | Navigate splits |
+| `Ctrl+Alt+H/J/K/L` | Resize splits |
+| `Ctrl+Shift+Z` | Toggle fullscreen (stack) |
+| `Ctrl+Shift+E` | Open file manager (yazi) |
+| `Ctrl+Shift+T` | New tab |
+| `Ctrl+Alt+1-5` | Switch to tab 1-5 |
+
 ## Aliases
 
 | Alias | Command |
@@ -88,6 +103,8 @@ exec zsh
 | `gs` | `git status` |
 | `gd` | `git diff` |
 | `..` | `cd ..` |
+| `kdev` | Launch kitty with dev layout |
+| `icat` | Display images in kitty |
 
 ## Useful Functions
 
@@ -96,11 +113,15 @@ exec zsh
 | `take mydir` | Create directory and cd into it |
 | `extract file.tar.gz` | Extract any archive format |
 | `prev` | Save last command as pet snippet |
+| `y` | Yazi file manager (cd on exit) |
 
 ## File Locations
 
 | Path | Purpose |
 |------|---------|
+| `~/.config/kitty/kitty.conf` | Kitty terminal config |
+| `~/.config/kitty/dev.session` | Dev layout session |
+| `~/.config/yazi/` | Yazi file manager config |
 | `~/.config/shell-bootstrap/zshrc` | Main zsh config |
 | `~/.config/shell-bootstrap/secrets.env` | Sync credentials |
 | `~/.config/starship.toml` | Prompt config |

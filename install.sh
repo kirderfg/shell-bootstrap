@@ -111,6 +111,54 @@ install_atuin() {
   curl -fsSL https://setup.atuin.sh | bash
 }
 
+install_kitty() {
+  if require_cmd kitty; then
+    log "Kitty terminal already installed."
+    return
+  fi
+  log "Installing Kitty terminal..."
+  curl -fsSL https://sw.kovidgoyal.net/kitty/installer.sh | sh /dev/stdin launch=n
+
+  # Create symlinks
+  mkdir -p "${BOOTSTRAP_BIN}"
+  ln -sf "${HOME}/.local/kitty.app/bin/kitty" "${BOOTSTRAP_BIN}/kitty"
+  ln -sf "${HOME}/.local/kitty.app/bin/kitten" "${BOOTSTRAP_BIN}/kitten"
+
+  # Desktop integration (for GUI environments)
+  mkdir -p "${HOME}/.local/share/applications"
+  cp "${HOME}/.local/kitty.app/share/applications/kitty.desktop" "${HOME}/.local/share/applications/" 2>/dev/null || true
+  cp "${HOME}/.local/kitty.app/share/applications/kitty-open.desktop" "${HOME}/.local/share/applications/" 2>/dev/null || true
+  sed -i "s|Icon=kitty|Icon=${HOME}/.local/kitty.app/share/icons/hicolor/256x256/apps/kitty.png|g" \
+    "${HOME}/.local/share/applications/kitty.desktop" 2>/dev/null || true
+}
+
+install_yazi() {
+  if require_cmd yazi; then
+    log "Yazi file manager already installed."
+    return
+  fi
+  log "Installing Yazi file manager..."
+
+  local arch tag asset url tmpdir
+  arch="$(uname -m)"
+  case "$arch" in
+    x86_64) arch="x86_64" ;;
+    aarch64|arm64) arch="aarch64" ;;
+    *) log "Unsupported arch for yazi: $arch"; return ;;
+  esac
+
+  tag="$(curl -fsSL https://api.github.com/repos/sxyazi/yazi/releases/latest | jq -r .tag_name)"
+  asset="yazi-${arch}-unknown-linux-gnu.zip"
+  url="https://github.com/sxyazi/yazi/releases/download/${tag}/${asset}"
+
+  tmpdir="$(mktemp -d)"
+  curl -fsSL "$url" -o "${tmpdir}/yazi.zip"
+  unzip -q "${tmpdir}/yazi.zip" -d "${tmpdir}"
+  install -m 0755 "${tmpdir}/yazi-${arch}-unknown-linux-gnu/yazi" "${BOOTSTRAP_BIN}/yazi"
+  install -m 0755 "${tmpdir}/yazi-${arch}-unknown-linux-gnu/ya" "${BOOTSTRAP_BIN}/ya"
+  rm -rf "${tmpdir}"
+}
+
 install_claude_code() {
   if require_cmd claude; then
     log "Claude Code already installed."
@@ -561,6 +609,403 @@ EOF
   fi
 }
 
+configure_kitty() {
+  log "Configuring Kitty terminal..."
+
+  local kitty_conf_dir="${HOME}/.config/kitty"
+  mkdir -p "${kitty_conf_dir}"
+
+  # Main kitty.conf
+  cat > "${kitty_conf_dir}/kitty.conf" <<'KITTY_CONF'
+# ============================================================================
+# Kitty Terminal Configuration - shell-bootstrap
+# ============================================================================
+
+# Font
+font_family      FiraCode Nerd Font Mono
+bold_font        auto
+italic_font      auto
+bold_italic_font auto
+font_size        11.0
+
+# Cursor
+cursor_shape               beam
+cursor_beam_thickness      1.5
+cursor_blink_interval      0.5
+cursor_stop_blinking_after 15.0
+
+# Scrollback
+scrollback_lines 10000
+
+# Mouse
+mouse_hide_wait 3.0
+url_style       curly
+open_url_with   default
+copy_on_select  yes
+
+# Terminal bell
+enable_audio_bell no
+visual_bell_duration 0.0
+
+# Window
+remember_window_size  yes
+initial_window_width  1200
+initial_window_height 800
+window_padding_width  4
+hide_window_decorations no
+confirm_os_window_close 0
+
+# Tab bar
+tab_bar_edge        top
+tab_bar_style       powerline
+tab_powerline_style slanted
+tab_title_template  "{index}: {title}"
+
+# ============================================================================
+# Layouts - splits is primary, stack for fullscreen toggle
+# ============================================================================
+enabled_layouts splits,stack
+
+# ============================================================================
+# Color Scheme - Tokyo Night inspired
+# ============================================================================
+foreground #c0caf5
+background #1a1b26
+background_opacity 0.95
+
+# Selection
+selection_foreground #1a1b26
+selection_background #c0caf5
+
+# Cursor colors
+cursor #c0caf5
+cursor_text_color #1a1b26
+
+# URL underline color
+url_color #73daca
+
+# Tab bar colors
+active_tab_foreground   #1a1b26
+active_tab_background   #7aa2f7
+inactive_tab_foreground #545c7e
+inactive_tab_background #1a1b26
+tab_bar_background      #15161e
+
+# Black
+color0 #15161e
+color8 #414868
+
+# Red
+color1 #f7768e
+color9 #f7768e
+
+# Green
+color2  #9ece6a
+color10 #9ece6a
+
+# Yellow
+color3  #e0af68
+color11 #e0af68
+
+# Blue
+color4  #7aa2f7
+color12 #7aa2f7
+
+# Magenta
+color5  #bb9af7
+color13 #bb9af7
+
+# Cyan
+color6  #7dcfff
+color14 #7dcfff
+
+# White
+color7  #a9b1d6
+color15 #c0caf5
+
+# ============================================================================
+# Keybindings
+# ============================================================================
+
+# Clear default shortcuts for customization
+clear_all_shortcuts no
+
+# Clipboard
+map ctrl+shift+c copy_to_clipboard
+map ctrl+shift+v paste_from_clipboard
+
+# Scrolling
+map ctrl+shift+up    scroll_line_up
+map ctrl+shift+down  scroll_line_down
+map ctrl+shift+page_up   scroll_page_up
+map ctrl+shift+page_down scroll_page_down
+map ctrl+shift+home  scroll_home
+map ctrl+shift+end   scroll_end
+
+# Window/Split management
+map ctrl+shift+enter launch --cwd=current
+map ctrl+shift+\     launch --location=vsplit --cwd=current
+map ctrl+shift+-     launch --location=hsplit --cwd=current
+map ctrl+shift+w     close_window
+
+# Navigate between splits
+map ctrl+shift+h neighboring_window left
+map ctrl+shift+l neighboring_window right
+map ctrl+shift+k neighboring_window up
+map ctrl+shift+j neighboring_window down
+
+# Resize splits
+map ctrl+alt+h resize_window narrower
+map ctrl+alt+l resize_window wider
+map ctrl+alt+k resize_window taller
+map ctrl+alt+j resize_window shorter
+map ctrl+alt+r resize_window reset
+
+# Toggle fullscreen (switch to stack layout)
+map ctrl+shift+z toggle_layout stack
+
+# Tab management
+map ctrl+shift+t new_tab_with_cwd
+map ctrl+shift+q close_tab
+map ctrl+shift+right next_tab
+map ctrl+shift+left  previous_tab
+map ctrl+shift+. move_tab_forward
+map ctrl+shift+, move_tab_backward
+map ctrl+alt+1 goto_tab 1
+map ctrl+alt+2 goto_tab 2
+map ctrl+alt+3 goto_tab 3
+map ctrl+alt+4 goto_tab 4
+map ctrl+alt+5 goto_tab 5
+
+# Font size
+map ctrl+shift+equal change_font_size all +1.0
+map ctrl+shift+minus change_font_size all -1.0
+map ctrl+shift+0     change_font_size all 0
+
+# Open file manager (yazi) in split
+map ctrl+shift+e launch --location=vsplit --cwd=current yazi
+
+# Reload config
+map ctrl+shift+f5 load_config_file
+
+# ============================================================================
+# Startup session
+# ============================================================================
+startup_session ~/.config/kitty/startup.session
+
+# Shell
+shell zsh
+KITTY_CONF
+
+  # Create startup session - main terminal with optional file explorer
+  cat > "${kitty_conf_dir}/startup.session" <<'SESSION'
+# Kitty startup session - shell-bootstrap
+# Layout: file explorer on left (narrow), main terminal on right
+
+layout splits
+cd ~
+
+# Main terminal (takes focus)
+launch --title main zsh
+focus
+
+# To auto-open yazi on left, uncomment these lines:
+# launch --location=vsplit --title files yazi
+# resize_window narrower 3
+# neighboring_window right
+SESSION
+
+  # Create a launch script for the dev layout
+  cat > "${kitty_conf_dir}/dev-layout.sh" <<'DEVLAYOUT'
+#!/bin/bash
+# Launch kitty with dev layout: file explorer + terminal + bottom pane
+kitty --session ~/.config/kitty/dev.session "$@"
+DEVLAYOUT
+  chmod +x "${kitty_conf_dir}/dev-layout.sh"
+
+  # Dev session with file explorer
+  cat > "${kitty_conf_dir}/dev.session" <<'DEVSESSION'
+# Dev layout: file explorer left, main terminal right, small bottom pane
+
+layout splits
+cd ~
+
+# Start main terminal
+launch --title main zsh
+
+# Split left for file explorer (vsplit creates left pane)
+launch --location=vsplit --title files yazi
+
+# Make file explorer narrower (repeat to make it smaller)
+resize_window narrower
+resize_window narrower
+resize_window narrower
+
+# Go back to main terminal
+neighboring_window right
+
+# Create bottom pane for quick commands
+launch --location=hsplit --title quick zsh
+
+# Make bottom pane shorter
+resize_window shorter
+resize_window shorter
+
+# Focus main terminal
+neighboring_window up
+focus
+DEVSESSION
+
+  log "Kitty configured. Use 'kitty' for normal or 'kitty --session ~/.config/kitty/dev.session' for dev layout"
+}
+
+configure_yazi() {
+  log "Configuring Yazi file manager..."
+
+  local yazi_conf_dir="${HOME}/.config/yazi"
+  mkdir -p "${yazi_conf_dir}"
+
+  # Yazi config
+  cat > "${yazi_conf_dir}/yazi.toml" <<'YAZI_CONF'
+# Yazi configuration - shell-bootstrap
+
+[manager]
+ratio = [1, 3, 4]
+sort_by = "natural"
+sort_sensitive = false
+sort_reverse = false
+sort_dir_first = true
+linemode = "size"
+show_hidden = true
+show_symlink = true
+
+[preview]
+tab_size = 2
+max_width = 600
+max_height = 900
+
+[opener]
+edit = [
+  { run = '${EDITOR:-nano} "$@"', block = true, for = "unix" },
+]
+open = [
+  { run = 'xdg-open "$@"', desc = "Open", for = "linux" },
+]
+YAZI_CONF
+
+  # Yazi keymap
+  cat > "${yazi_conf_dir}/keymap.toml" <<'YAZI_KEYS'
+# Yazi keybindings - shell-bootstrap
+
+[manager]
+prepend_keymap = [
+  { on = ["<Esc>"], run = "escape", desc = "Exit visual mode / clear selection" },
+  { on = ["q"], run = "quit", desc = "Quit" },
+  { on = ["Q"], run = "quit --no-cwd-file", desc = "Quit without changing cwd" },
+  { on = ["<C-c>"], run = "close", desc = "Close current tab or quit if last" },
+
+  # Navigation
+  { on = ["h"], run = "leave", desc = "Go to parent directory" },
+  { on = ["l"], run = "enter", desc = "Enter directory" },
+  { on = ["j"], run = "arrow 1", desc = "Move down" },
+  { on = ["k"], run = "arrow -1", desc = "Move up" },
+  { on = ["g", "g"], run = "arrow -99999999", desc = "Go to top" },
+  { on = ["G"], run = "arrow 99999999", desc = "Go to bottom" },
+
+  # Selection
+  { on = ["<Space>"], run = ["select --state=none", "arrow 1"], desc = "Toggle selection" },
+  { on = ["v"], run = "visual_mode", desc = "Enter visual mode" },
+  { on = ["V"], run = "visual_mode --unset", desc = "Enter visual mode (unset)" },
+
+  # Operations
+  { on = ["y"], run = "yank", desc = "Yank (copy)" },
+  { on = ["x"], run = "yank --cut", desc = "Cut" },
+  { on = ["p"], run = "paste", desc = "Paste" },
+  { on = ["P"], run = "paste --force", desc = "Paste (overwrite)" },
+  { on = ["d"], run = "remove", desc = "Move to trash" },
+  { on = ["D"], run = "remove --permanently", desc = "Delete permanently" },
+  { on = ["a"], run = "create", desc = "Create file/directory" },
+  { on = ["r"], run = "rename --cursor=before_ext", desc = "Rename" },
+
+  # Search
+  { on = ["/"], run = "find --smart", desc = "Find" },
+  { on = ["n"], run = "find_arrow", desc = "Next match" },
+  { on = ["N"], run = "find_arrow --previous", desc = "Previous match" },
+
+  # Sorting
+  { on = ["o", "n"], run = "sort natural --dir-first", desc = "Sort by name" },
+  { on = ["o", "s"], run = "sort size --dir-first --reverse", desc = "Sort by size" },
+  { on = ["o", "m"], run = "sort mtime --dir-first --reverse", desc = "Sort by modified" },
+
+  # Quick jumps
+  { on = ["g", "h"], run = "cd ~", desc = "Go home" },
+  { on = ["g", "d"], run = "cd ~/Downloads", desc = "Go to Downloads" },
+  { on = ["g", "p"], run = "cd ~/projects", desc = "Go to projects" },
+
+  # Hidden files
+  { on = ["."], run = "hidden toggle", desc = "Toggle hidden files" },
+]
+YAZI_KEYS
+
+  # Yazi theme (Tokyo Night)
+  cat > "${yazi_conf_dir}/theme.toml" <<'YAZI_THEME'
+# Yazi theme - Tokyo Night inspired
+
+[manager]
+cwd = { fg = "#7aa2f7" }
+
+# Hovered
+hovered = { fg = "#1a1b26", bg = "#7aa2f7" }
+preview_hovered = { underline = true }
+
+# Find
+find_keyword = { fg = "#e0af68", bold = true }
+find_position = { fg = "#bb9af7", bg = "reset", bold = true }
+
+# Marker
+marker_copied = { fg = "#9ece6a", bg = "#9ece6a" }
+marker_cut = { fg = "#f7768e", bg = "#f7768e" }
+marker_selected = { fg = "#7aa2f7", bg = "#7aa2f7" }
+
+# Tab
+tab_active = { fg = "#1a1b26", bg = "#7aa2f7" }
+tab_inactive = { fg = "#545c7e", bg = "#1a1b26" }
+tab_width = 1
+
+# Status bar
+[status]
+separator_open = ""
+separator_close = ""
+separator_style = { fg = "#1a1b26", bg = "#1a1b26" }
+
+# Mode
+mode_normal = { fg = "#1a1b26", bg = "#7aa2f7", bold = true }
+mode_select = { fg = "#1a1b26", bg = "#9ece6a", bold = true }
+mode_unset = { fg = "#1a1b26", bg = "#f7768e", bold = true }
+
+# Progress
+progress_label = { fg = "#c0caf5", bold = true }
+progress_normal = { fg = "#7aa2f7", bg = "#1a1b26" }
+progress_error = { fg = "#f7768e", bg = "#1a1b26" }
+
+[filetype]
+rules = [
+  { mime = "image/*", fg = "#bb9af7" },
+  { mime = "video/*", fg = "#e0af68" },
+  { mime = "audio/*", fg = "#e0af68" },
+  { mime = "application/zip", fg = "#f7768e" },
+  { mime = "application/gzip", fg = "#f7768e" },
+  { mime = "application/x-tar", fg = "#f7768e" },
+  { mime = "application/pdf", fg = "#9ece6a" },
+  { name = "*.md", fg = "#7dcfff" },
+  { name = "*.json", fg = "#e0af68" },
+  { name = "*.yml", fg = "#bb9af7" },
+  { name = "*.yaml", fg = "#bb9af7" },
+  { name = "*.toml", fg = "#bb9af7" },
+]
+YAZI_THEME
+}
+
 write_bootstrap_zshrc() {
   log "Writing bootstrap zshrc fragment..."
   cat > "${BOOTSTRAP_HOME}/zshrc" <<EOF
@@ -651,6 +1096,25 @@ if command -v docker >/dev/null 2>&1; then
   alias dps='docker ps'
   alias dpsa='docker ps -a'
   alias di='docker images'
+fi
+
+# Kitty terminal shortcuts
+if command -v kitty >/dev/null 2>&1; then
+  alias kdev='kitty --session ~/.config/kitty/dev.session'
+  alias icat='kitty +kitten icat'  # Display images in terminal
+  alias kdiff='kitty +kitten diff' # Better diff viewer
+fi
+
+# Yazi file manager with cd on exit
+if command -v yazi >/dev/null 2>&1; then
+  function y() {
+    local tmp="\$(mktemp -t "yazi-cwd.XXXXXX")"
+    yazi "\$@" --cwd-file="\$tmp"
+    if cwd="\$(cat -- "\$tmp")" && [ -n "\$cwd" ] && [ "\$cwd" != "\$PWD" ]; then
+      cd -- "\$cwd"
+    fi
+    rm -f -- "\$tmp"
+  }
 fi
 
 # ============================================================================
@@ -864,6 +1328,8 @@ main() {
   install_apt_packages
   install_delta
   install_atuin
+  install_kitty
+  install_yazi
   install_starship
   install_pet
   install_zsh_plugins
@@ -873,6 +1339,8 @@ main() {
   configure_atuin
   configure_git
   configure_pet
+  configure_kitty
+  configure_yazi
   configure_claude_code
 
   write_bootstrap_zshrc
