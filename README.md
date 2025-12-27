@@ -24,9 +24,12 @@ One-command shell setup for WSL Ubuntu and GitHub Codespaces. Installs and confi
 ## Quick Install
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/kirderfg/shell-bootstrap/main/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/kirderfg/shell-bootstrap/main/install.sh -o /tmp/install.sh
+bash /tmp/install.sh
 exec zsh
 ```
+
+> **Note:** Download first, then run. Piping directly to bash (`curl ... | bash`) breaks the interactive credential prompts.
 
 ## Manual Install
 
