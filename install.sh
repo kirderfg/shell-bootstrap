@@ -61,6 +61,93 @@ append_block_once() {
   } >>"$file"
 }
 
+prompt_for_credentials() {
+  local secrets_file="${BOOTSTRAP_HOME}/secrets.env"
+  local need_prompts=false
+
+  # Check if any credentials are missing
+  if [[ -z "${ATUIN_PASSWORD:-}" || -z "${ATUIN_KEY:-}" || -z "${PET_SNIPPETS_TOKEN:-}" ]]; then
+    need_prompts=true
+  fi
+
+  if [[ "$need_prompts" != "true" ]]; then
+    return
+  fi
+
+  echo ""
+  log "╔════════════════════════════════════════════════════════════════╗"
+  log "║  SYNC CREDENTIALS SETUP                                       ║"
+  log "║  Press Enter to skip any field you don't want to configure.   ║"
+  log "╚════════════════════════════════════════════════════════════════╝"
+  echo ""
+
+  # Ensure secrets file exists with proper header
+  if [[ ! -f "$secrets_file" ]]; then
+    cat > "$secrets_file" <<'EOF'
+# Shell Bootstrap Secrets - Auto-generated
+# These credentials enable sync features across machines.
+
+EOF
+  fi
+
+  # Prompt for Atuin credentials if not set
+  if [[ -z "${ATUIN_KEY:-}" ]]; then
+    echo "ATUIN SYNC - Sync shell history across machines"
+    echo "  Get your key from: atuin key (on a logged-in machine)"
+    echo "  Or register first: atuin register"
+    echo ""
+    read -rp "  Atuin encryption key (blank to skip): " input_key
+    if [[ -n "$input_key" ]]; then
+      export ATUIN_KEY="$input_key"
+      if ! grep -q "^export ATUIN_KEY=" "$secrets_file" 2>/dev/null; then
+        echo "export ATUIN_KEY=\"$input_key\"" >> "$secrets_file"
+      else
+        sed -i "s|^export ATUIN_KEY=.*|export ATUIN_KEY=\"$input_key\"|" "$secrets_file"
+      fi
+      log "  Saved ATUIN_KEY to secrets.env"
+    fi
+  fi
+
+  if [[ -z "${ATUIN_PASSWORD:-}" && -n "${ATUIN_KEY:-}" ]]; then
+    read -rsp "  Atuin password (blank to skip): " input_pass
+    echo ""
+    if [[ -n "$input_pass" ]]; then
+      export ATUIN_PASSWORD="$input_pass"
+      if ! grep -q "^export ATUIN_PASSWORD=" "$secrets_file" 2>/dev/null; then
+        echo "export ATUIN_PASSWORD=\"$input_pass\"" >> "$secrets_file"
+      else
+        sed -i "s|^export ATUIN_PASSWORD=.*|export ATUIN_PASSWORD=\"$input_pass\"|" "$secrets_file"
+      fi
+      log "  Saved ATUIN_PASSWORD to secrets.env"
+    fi
+  fi
+
+  echo ""
+
+  # Prompt for Pet snippets token if not set
+  if [[ -z "${PET_SNIPPETS_TOKEN:-}" ]]; then
+    echo "PET SNIPPETS SYNC - Sync command snippets across machines"
+    echo "  Create a GitHub token at: https://github.com/settings/tokens"
+    echo "  Needs 'repo' scope for private repos"
+    echo ""
+    read -rp "  GitHub token for snippets repo (blank to skip): " input_token
+    if [[ -n "$input_token" ]]; then
+      export PET_SNIPPETS_TOKEN="$input_token"
+      if ! grep -q "^export PET_SNIPPETS_TOKEN=" "$secrets_file" 2>/dev/null; then
+        echo "export PET_SNIPPETS_TOKEN=\"$input_token\"" >> "$secrets_file"
+      else
+        sed -i "s|^export PET_SNIPPETS_TOKEN=.*|export PET_SNIPPETS_TOKEN=\"$input_token\"|" "$secrets_file"
+      fi
+      log "  Saved PET_SNIPPETS_TOKEN to secrets.env"
+    fi
+  fi
+
+  echo ""
+  chmod 600 "$secrets_file"
+  log "Credentials saved to $secrets_file (chmod 600)"
+  echo ""
+}
+
 install_apt_packages() {
   log "Installing base packages via apt..."
   ${SUDO} apt-get update -y
@@ -71,8 +158,7 @@ install_apt_packages() {
     zsh tmux fzf \
     ripgrep fd-find bat jq \
     direnv zoxide \
-    fonts-firacode fonts-powerline \
-    libxcb-xkb1 libxkbcommon-x11-0 libxcb-cursor0 libxcb-keysyms1 libxcb-shape0
+    fonts-firacode fonts-powerline
 
   # Optional (nice-to-have) packages; don't hard-fail if not present in the image
   ${SUDO} apt-get install -y gh || true
@@ -110,27 +196,6 @@ install_atuin() {
   fi
   log "Installing Atuin..."
   curl -fsSL https://setup.atuin.sh | bash
-}
-
-install_kitty() {
-  if require_cmd kitty; then
-    log "Kitty terminal already installed."
-    return
-  fi
-  log "Installing Kitty terminal..."
-  curl -fsSL https://sw.kovidgoyal.net/kitty/installer.sh | sh /dev/stdin launch=n
-
-  # Create symlinks
-  mkdir -p "${BOOTSTRAP_BIN}"
-  ln -sf "${HOME}/.local/kitty.app/bin/kitty" "${BOOTSTRAP_BIN}/kitty"
-  ln -sf "${HOME}/.local/kitty.app/bin/kitten" "${BOOTSTRAP_BIN}/kitten"
-
-  # Desktop integration (for GUI environments)
-  mkdir -p "${HOME}/.local/share/applications"
-  cp "${HOME}/.local/kitty.app/share/applications/kitty.desktop" "${HOME}/.local/share/applications/" 2>/dev/null || true
-  cp "${HOME}/.local/kitty.app/share/applications/kitty-open.desktop" "${HOME}/.local/share/applications/" 2>/dev/null || true
-  sed -i "s|Icon=kitty|Icon=${HOME}/.local/kitty.app/share/icons/hicolor/256x256/apps/kitty.png|g" \
-    "${HOME}/.local/share/applications/kitty.desktop" 2>/dev/null || true
 }
 
 install_yazi() {
@@ -499,7 +564,7 @@ configure_atuin() {
   cat > "${HOME}/.config/atuin/config.toml" <<EOF
 # Atuin config (bootstrap default)
 auto_sync = true
-sync_frequency = "10m"
+sync_frequency = "5m"
 sync_address = "https://api.atuin.sh"
 
 # Reduce risk of capturing secrets.
@@ -520,15 +585,32 @@ history_filter = [
 ]
 EOF
 
-  # Attempt non-interactive login if secrets are present (useful in Codespaces).
+  # Check if atuin is available
+  if ! command -v atuin >/dev/null 2>&1; then
+    log "Atuin not found in PATH, skipping sync setup."
+    return
+  fi
+
+  # Check if already logged in by testing sync
+  if atuin sync 2>/dev/null; then
+    log "Atuin already logged in and synced."
+    return
+  fi
+
+  # Attempt non-interactive login if secrets are present
   if [[ -n "${ATUIN_PASSWORD:-}" && -n "${ATUIN_KEY:-}" ]]; then
-    log "Attempting Atuin login (non-interactive; requires ATUIN_PASSWORD + ATUIN_KEY)..."
+    log "Attempting Atuin login..."
     set +e
-    atuin login -u "${ATUIN_USERNAME}" -p "${ATUIN_PASSWORD}" -k "${ATUIN_KEY}"
-    atuin sync
+    if atuin login -u "${ATUIN_USERNAME}" -p "${ATUIN_PASSWORD}" -k "${ATUIN_KEY}" 2>/dev/null; then
+      log "Atuin login successful!"
+      atuin sync
+      log "Atuin history synced."
+    else
+      log "Atuin login failed. Check credentials in: ${BOOTSTRAP_HOME}/secrets.env"
+    fi
     set -e
   else
-    log "Atuin installed. Set ATUIN_KEY + ATUIN_PASSWORD in secrets.env, then re-run."
+    log "Atuin sync not configured. Run 'atuin register' or re-run install.sh with credentials."
   fi
 }
 
@@ -608,286 +690,6 @@ EOF
   else
     log "Pet snippets repo not configured (set PET_SNIPPETS_TOKEN in secrets.env to enable)."
   fi
-}
-
-configure_kitty() {
-  log "Configuring Kitty terminal..."
-
-  local kitty_conf_dir="${HOME}/.config/kitty"
-  mkdir -p "${kitty_conf_dir}"
-
-  # Main kitty.conf
-  cat > "${kitty_conf_dir}/kitty.conf" <<'KITTY_CONF'
-# ============================================================================
-# Kitty Terminal Configuration - shell-bootstrap
-# ============================================================================
-
-# Font
-font_family      FiraCode Nerd Font Mono
-bold_font        auto
-italic_font      auto
-bold_italic_font auto
-font_size        11.0
-
-# Cursor
-cursor_shape               beam
-cursor_beam_thickness      1.5
-cursor_blink_interval      0.5
-cursor_stop_blinking_after 15.0
-
-# Scrollback
-scrollback_lines 10000
-
-# Mouse
-mouse_hide_wait 3.0
-url_style       curly
-open_url_with   default
-copy_on_select  yes
-
-# Terminal bell
-enable_audio_bell no
-visual_bell_duration 0.0
-
-# Window
-remember_window_size  yes
-initial_window_width  1200
-initial_window_height 800
-window_padding_width  4
-hide_window_decorations no
-confirm_os_window_close 0
-
-# Tab bar
-tab_bar_edge        top
-tab_bar_style       powerline
-tab_powerline_style slanted
-tab_title_template  "{index}: {title}"
-
-# ============================================================================
-# Layouts - splits is primary, stack for fullscreen toggle
-# ============================================================================
-enabled_layouts splits,stack
-
-# ============================================================================
-# Color Scheme - Tokyo Night inspired
-# ============================================================================
-foreground #c0caf5
-background #1a1b26
-background_opacity 0.95
-
-# Selection
-selection_foreground #1a1b26
-selection_background #c0caf5
-
-# Cursor colors
-cursor #c0caf5
-cursor_text_color #1a1b26
-
-# URL underline color
-url_color #73daca
-
-# Tab bar colors
-active_tab_foreground   #1a1b26
-active_tab_background   #7aa2f7
-inactive_tab_foreground #545c7e
-inactive_tab_background #1a1b26
-tab_bar_background      #15161e
-
-# Black
-color0 #15161e
-color8 #414868
-
-# Red
-color1 #f7768e
-color9 #f7768e
-
-# Green
-color2  #9ece6a
-color10 #9ece6a
-
-# Yellow
-color3  #e0af68
-color11 #e0af68
-
-# Blue
-color4  #7aa2f7
-color12 #7aa2f7
-
-# Magenta
-color5  #bb9af7
-color13 #bb9af7
-
-# Cyan
-color6  #7dcfff
-color14 #7dcfff
-
-# White
-color7  #a9b1d6
-color15 #c0caf5
-
-# ============================================================================
-# Keybindings
-# ============================================================================
-
-# Clear default shortcuts for customization
-clear_all_shortcuts no
-
-# Clipboard
-map ctrl+shift+c copy_to_clipboard
-map ctrl+shift+v paste_from_clipboard
-
-# Scrolling
-map ctrl+shift+up    scroll_line_up
-map ctrl+shift+down  scroll_line_down
-map ctrl+shift+page_up   scroll_page_up
-map ctrl+shift+page_down scroll_page_down
-map ctrl+shift+home  scroll_home
-map ctrl+shift+end   scroll_end
-
-# Window/Split management
-map ctrl+shift+enter launch --cwd=current
-map ctrl+shift+\     launch --location=vsplit --cwd=current
-map ctrl+shift+-     launch --location=hsplit --cwd=current
-map ctrl+shift+w     close_window
-
-# Navigate between splits
-map ctrl+shift+h neighboring_window left
-map ctrl+shift+l neighboring_window right
-map ctrl+shift+k neighboring_window up
-map ctrl+shift+j neighboring_window down
-
-# Resize splits
-map ctrl+alt+h resize_window narrower
-map ctrl+alt+l resize_window wider
-map ctrl+alt+k resize_window taller
-map ctrl+alt+j resize_window shorter
-map ctrl+alt+r resize_window reset
-
-# Toggle fullscreen (switch to stack layout)
-map ctrl+shift+z toggle_layout stack
-
-# Tab management
-map ctrl+shift+t new_tab_with_cwd
-map ctrl+shift+q close_tab
-map ctrl+shift+right next_tab
-map ctrl+shift+left  previous_tab
-map ctrl+shift+. move_tab_forward
-map ctrl+shift+, move_tab_backward
-map ctrl+alt+1 goto_tab 1
-map ctrl+alt+2 goto_tab 2
-map ctrl+alt+3 goto_tab 3
-map ctrl+alt+4 goto_tab 4
-map ctrl+alt+5 goto_tab 5
-
-# Font size
-map ctrl+shift+equal change_font_size all +1.0
-map ctrl+shift+minus change_font_size all -1.0
-map ctrl+shift+0     change_font_size all 0
-
-# Open file manager (yazi) in split
-map ctrl+shift+e launch --location=vsplit --cwd=current yazi
-
-# Reload config
-map ctrl+shift+f5 load_config_file
-
-# Show shortcuts help (F1)
-map f1 launch --type=overlay --title=Shortcuts sh -c 'cat ~/.config/kitty/shortcuts.txt; read -n 1'
-
-# ============================================================================
-# Startup session
-# ============================================================================
-startup_session ~/.config/kitty/startup.session
-
-# Shell
-shell zsh
-
-# ============================================================================
-# WSLg Performance (native Wayland for speed)
-# ============================================================================
-
-# Use native Wayland (faster than X11/XWayland)
-linux_display_server wayland
-
-# Skip update checks
-update_check_interval 0
-
-# Wayland clipboard
-clipboard_control write-clipboard read-clipboard
-
-# Reduce input latency
-input_delay 0
-repaint_delay 6
-sync_to_monitor no
-KITTY_CONF
-
-  # Create a launch script for the dev layout
-  cat > "${kitty_conf_dir}/dev-layout.sh" <<'DEVLAYOUT'
-#!/bin/bash
-# Launch kitty with dev layout: file explorer + terminal + bottom pane
-kitty --session ~/.config/kitty/dev.session "$@"
-DEVLAYOUT
-  chmod +x "${kitty_conf_dir}/dev-layout.sh"
-
-  # Dev session with file explorer
-  # Note: Session files have limited commands - use launch with --location for splits
-  cat > "${kitty_conf_dir}/dev.session" <<'DEVSESSION'
-# Dev layout: file explorer left, main terminal right, small bottom pane
-# After launch, use Ctrl+Alt+H to make left pane narrower
-
-new_tab dev
-layout splits
-cd ~
-
-# Main terminal on the right (launched first, takes most space)
-launch --title main zsh
-
-# File explorer on the left (vsplit from main)
-launch --location=vsplit --title files --bias=25 yazi
-
-# Quick commands pane at bottom of main area
-launch --location=hsplit --title quick --bias=20 zsh
-DEVSESSION
-
-  # Simpler startup session
-  cat > "${kitty_conf_dir}/startup.session" <<'SESSION'
-# Kitty startup session - shell-bootstrap
-# Just a clean zsh terminal
-
-new_tab home
-layout splits
-cd ~
-launch --title main zsh
-SESSION
-
-  # Create shortcuts quick reference
-  cat > "${kitty_conf_dir}/shortcuts.txt" <<'SHORTCUTS'
-
-  ╭──────────────────────────────────────────────────────────────╮
-  │                    KITTY SHORTCUTS                           │
-  ├──────────────────────────────────────────────────────────────┤
-  │  Ctrl+Shift+\      │  Vertical split                        │
-  │  Ctrl+Shift+-      │  Horizontal split                      │
-  │  Ctrl+Shift+W      │  Close split                           │
-  │  Ctrl+Shift+Z      │  Toggle fullscreen                     │
-  │  Ctrl+Shift+E      │  Open file manager (yazi)              │
-  ├──────────────────────────────────────────────────────────────┤
-  │  Ctrl+Shift+H/J/K/L│  Navigate splits (vim style)           │
-  │  Ctrl+Alt+H/J/K/L  │  Resize splits                         │
-  ├──────────────────────────────────────────────────────────────┤
-  │  Ctrl+Shift+T      │  New tab                               │
-  │  Ctrl+Alt+1-5      │  Switch to tab 1-5                     │
-  │  Ctrl+Shift+←/→    │  Previous/Next tab                     │
-  ├──────────────────────────────────────────────────────────────┤
-  │  Ctrl+R            │  Search history (Atuin)                │
-  │  Ctrl+S            │  Search snippets (pet)                 │
-  │  ESC / Ctrl+[      │  Vi normal mode                        │
-  │  F1                │  Show this help                        │
-  ╰──────────────────────────────────────────────────────────────╯
-
-                    Press any key to close...
-
-SHORTCUTS
-
-  log "Kitty configured. Use 'kitty' for normal or 'kitty --session ~/.config/kitty/dev.session' for dev layout"
 }
 
 configure_yazi() {
@@ -1037,10 +839,239 @@ rules = [
 YAZI_THEME
 }
 
+configure_tmux() {
+  log "Configuring tmux..."
+
+  local tmux_conf="${HOME}/.tmux.conf"
+  local dev_script="${BOOTSTRAP_BIN}/dev-session"
+
+  # Create tmux.conf with sensible defaults
+  cat > "${tmux_conf}" <<'TMUX_CONF'
+# tmux configuration - shell-bootstrap
+
+# Use Ctrl+A as prefix (easier than Ctrl+B)
+unbind C-b
+set -g prefix C-a
+bind C-a send-prefix
+
+# Enable mouse support
+set -g mouse on
+
+# Start windows and panes at 1, not 0
+set -g base-index 1
+setw -g pane-base-index 1
+
+# Renumber windows when one is closed
+set -g renumber-windows on
+
+# Increase history limit
+set -g history-limit 50000
+
+# Faster escape time (for vim)
+set -sg escape-time 10
+
+# Enable 256 colors and true color
+set -g default-terminal "tmux-256color"
+set -ga terminal-overrides ",*256col*:Tc"
+
+# Status bar styling
+set -g status-style 'bg=#1a1b26 fg=#c0caf5'
+set -g status-left '#[fg=#7aa2f7,bold][#S] '
+set -g status-left-length 20
+set -g status-right '#[fg=#9ece6a]%H:%M #[fg=#bb9af7]%d-%b'
+set -g status-right-length 40
+
+# Window status
+setw -g window-status-current-style 'fg=#1a1b26 bg=#7aa2f7 bold'
+setw -g window-status-current-format ' #I:#W '
+setw -g window-status-style 'fg=#545c7e'
+setw -g window-status-format ' #I:#W '
+
+# Pane borders
+set -g pane-border-style 'fg=#3b4261'
+set -g pane-active-border-style 'fg=#7aa2f7'
+
+# Vi mode for copy
+setw -g mode-keys vi
+bind -T copy-mode-vi v send-keys -X begin-selection
+bind -T copy-mode-vi y send-keys -X copy-selection-and-cancel
+
+# Easier splits (| and -)
+bind | split-window -h -c "#{pane_current_path}"
+bind - split-window -v -c "#{pane_current_path}"
+
+# Vim-like pane navigation
+bind h select-pane -L
+bind j select-pane -D
+bind k select-pane -U
+bind l select-pane -R
+
+# Resize panes with Ctrl+hjkl
+bind -r C-h resize-pane -L 5
+bind -r C-j resize-pane -D 5
+bind -r C-k resize-pane -U 5
+bind -r C-l resize-pane -R 5
+
+# Quick window switching
+bind -n M-1 select-window -t 1
+bind -n M-2 select-window -t 2
+bind -n M-3 select-window -t 3
+bind -n M-4 select-window -t 4
+
+# Reload config
+bind r source-file ~/.tmux.conf \; display "Config reloaded!"
+
+# Toggle zoom with z
+bind z resize-pane -Z
+
+# New window in current path
+bind c new-window -c "#{pane_current_path}"
+TMUX_CONF
+
+  # Create dev session launcher script
+  cat > "${dev_script}" <<'DEV_SESSION'
+#!/usr/bin/env bash
+# Dev session - Claude Code + File Explorer + Shell
+# Layout: 2/3 Claude | 1/3 (yazi top, shell bottom)
+
+SESSION="dev"
+WORKING_DIR="${1:-$(pwd)}"
+
+# Check if session exists
+if tmux has-session -t "$SESSION" 2>/dev/null; then
+  tmux attach-session -t "$SESSION"
+  exit 0
+fi
+
+# Create new session with first window (workspace)
+tmux new-session -d -s "$SESSION" -n "workspace" -c "$WORKING_DIR"
+
+# Set up the layout: Claude (2/3) | right side (1/3)
+# First split: 67% left (Claude), 33% right
+tmux split-window -h -p 33 -c "$WORKING_DIR"
+
+# Now we're in the right pane, split it vertically
+# Top: yazi (60%), Bottom: shell (40%)
+tmux split-window -v -p 40 -c "$WORKING_DIR"
+
+# Select panes and start applications
+# Pane 0: Claude (left, main)
+# Pane 1: yazi (right top)
+# Pane 2: shell (right bottom)
+
+# Start yazi in pane 1 (right top)
+tmux select-pane -t 1
+tmux send-keys "yazi" Enter
+
+# Start claude in pane 0 (left)
+tmux select-pane -t 0
+tmux send-keys "claude" Enter
+
+# Create second window for reference card
+tmux new-window -t "$SESSION" -n "reference"
+tmux send-keys "less -R ~/.config/shell-bootstrap/shell-reference.txt" Enter
+
+# Go back to workspace window, focus on Claude pane
+tmux select-window -t "$SESSION:1"
+tmux select-pane -t 0
+
+# Attach to session
+tmux attach-session -t "$SESSION"
+DEV_SESSION
+
+  chmod +x "${dev_script}"
+  log "Created dev-session launcher at ${dev_script}"
+}
+
+configure_shell_reference() {
+  log "Creating shell reference file..."
+  cat > "${BOOTSTRAP_HOME}/shell-reference.txt" <<'SHELL_REF'
+═══════════════════════════════════════════════════════════════════════════════════════════════════════
+                              SHELL ENVIRONMENT REFERENCE  (type 'help' to show)
+═══════════════════════════════════════════════════════════════════════════════════════════════════════
+
+┌─ ZSH VI MODE ────────────────────────────────────┐  ┌─ ATUIN (History Search & Sync) ─────────────────┐
+│ ESC/Ctrl+[    Normal mode (block cursor)         │  │ Ctrl+R        Interactive history search        │
+│ i/a           Insert mode (beam cursor)          │  │ Up/Down       Navigate history (prefix search)  │
+│ h/l           Move left/right                    │  │ ─ In search UI ─                                │
+│ w/b           Forward/backward by word           │  │ Enter         Execute selected command          │
+│ 0/$           Start/end of line                  │  │ Tab           Insert to prompt (don't execute)  │
+│ j/k           Previous/next history              │  │ Ctrl+D        Delete entry from history         │
+│ x             Delete character                   │  │ ESC/Ctrl+C    Cancel search                     │
+│ dw/dd         Delete word/line                   │  │ ─ Commands ─                                    │
+│ cw/cc         Change word/line                   │  │ atuin sync    Sync history with server          │
+│ yy/p          Yank line / paste                  │  │ atuin stats   Show history statistics           │
+│ u             Undo                               │  │ atuin key     Show encryption key               │
+│ ─ Insert mode shortcuts ─                        │  │ atuin login   Login to atuin server             │
+│ Ctrl+A/E      Start/end of line                  │  └──────────────────────────────────────────────────┘
+│ Ctrl+W        Delete word backward               │
+│ Ctrl+U/K      Delete to start/end                │  ┌─ PET (Snippet Manager) ──────────────────────────┐
+└──────────────────────────────────────────────────┘  │ Ctrl+S        Search snippets (insert to prompt) │
+                                                      │ pet new       Create new snippet                 │
+┌─ YAZI (File Manager) ────────────────────────────┐  │ prev          Save last command as snippet       │
+│ y             Open yazi (cd on exit)             │  │ pet search    Interactive snippet search         │
+│ h/l           Parent / enter directory           │  │ pet edit      Edit snippets file                 │
+│ j/k           Move down/up                       │  │ pet list      List all snippets                  │
+│ gg/G          First/last item                    │  └──────────────────────────────────────────────────┘
+│ gh/gd/gp      Go home/Downloads/projects         │
+│ .             Toggle hidden files                │  ┌─ ZOXIDE & FZF ────────────────────────────────────┐
+│ Space         Toggle selection                   │  │ z <query>     Jump to matching directory         │
+│ y/x           Yank/cut selected                  │  │ zi <query>    Interactive selection with fzf     │
+│ p/P           Paste / paste overwrite            │  │ Ctrl+T        Fuzzy find files, insert path      │
+│ d/D           Trash / delete permanently         │  │ Alt+C         Fuzzy cd into subdirectory         │
+│ a/r           Create / rename                    │  │ **<Tab>       Trigger fzf completion             │
+│ /n/N          Find / next/prev match             │  └──────────────────────────────────────────────────┘
+│ on/os/om      Sort: name/size/modified           │
+│ q             Quit                               │  ┌─ TMUX (Ctrl+A = prefix) ─────────────────────────┐
+└──────────────────────────────────────────────────┘  │ dev           Launch dev session (Claude+yazi)   │
+                                                      │ Ctrl+A c      Create window                      │
+┌─ GIT ALIASES ────────────────────────────────────┐  │ Ctrl+A |/-    Split vertical/horizontal          │
+│ gs            git status                         │  │ Ctrl+A h/j/k/l Navigate panes (vim-style)        │
+│ gd/gds        git diff / diff --staged           │  │ Ctrl+A z      Toggle pane zoom                   │
+│ gl            git log --oneline -20              │  │ Alt+1/2/3/4   Switch to window 1-4               │
+│ gp            git pull                           │  │ Ctrl+A d      Detach from session                │
+└──────────────────────────────────────────────────┘  │ Ctrl+A [      Scroll/copy mode (q to exit)       │
+                                                      │ Ctrl+A r      Reload tmux config                 │
+┌─ ALIASES & FUNCTIONS ────────────────────────────┐  └──────────────────────────────────────────────────┘
+│ dev           Dev session (Claude+yazi+shell)    │
+│ ll/la         Long list with hidden files        │  ┌─ CLAUDE CODE ──────────────────────────────────────┐
+│ lt/lS         List by time/size                  │  │ claude        Start Claude Code                  │
+│ ../...        Go up 1/2 directories              │  │ claude -c     Continue last session              │
+│ take <dir>    Create dir and cd into it          │  │ /help         Show all slash commands            │
+│ extract <f>   Extract any archive                │  │ /model X      Switch model (opus/sonnet/haiku)   │
+│ ff <name>     Find file by name                  │  │ /compact      Compress context                   │
+│ path          Show PATH one per line             │  │ @file.txt     Include file in prompt             │
+│ duf           Disk usage sorted                  │  │ ! <cmd>       Run shell command inline           │
+│ h/help        History / this reference           │  │ Ctrl+C/D      Cancel / exit                      │
+└──────────────────────────────────────────────────┘  └──────────────────────────────────────────────────┘
+
+┌─ CONFIG FILES ───────────────────────────────────────────────────────────────────────────────────────────┐
+│ ~/.config/starship.toml  ~/.config/atuin/config.toml  ~/.config/pet/{config,snippet}.toml  ~/.config/yazi/│
+│ ~/.config/shell-bootstrap/{zshrc,secrets.env}  ~/CLAUDE.md                                               │
+└──────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+SHELL_REF
+}
+
 write_bootstrap_zshrc() {
   log "Writing bootstrap zshrc fragment..."
   cat > "${BOOTSTRAP_HOME}/zshrc" <<EOF
 # shell-bootstrap zsh config
+
+# ============================================================================
+# WSLg Wayland Setup (native Wayland for better performance)
+# ============================================================================
+if [[ -d /mnt/wslg ]]; then
+  # WSLg detected - configure for native Wayland (faster than X11/XWayland)
+  export XDG_RUNTIME_DIR=/mnt/wslg/runtime-dir
+  export WAYLAND_DISPLAY=wayland-0
+  export XDG_SESSION_TYPE=wayland
+
+  # X11 fallback for apps that don't support Wayland
+  export DISPLAY=:0
+
+  # PulseAudio via WSLg
+  export PULSE_SERVER=/mnt/wslg/PulseServer
+fi
 
 # ============================================================================
 # Zsh options for better usability
@@ -1162,12 +1193,8 @@ if command -v docker >/dev/null 2>&1; then
   alias di='docker images'
 fi
 
-# Kitty terminal shortcuts
-if command -v kitty >/dev/null 2>&1; then
-  alias kdev='kitty --session ~/.config/kitty/dev.session'
-  alias icat='kitty +kitten icat'  # Display images in terminal
-  alias kdiff='kitty +kitten diff' # Better diff viewer
-fi
+# Dev session (tmux with Claude + yazi + shell)
+alias dev='dev-session'
 
 # Yazi file manager with cd on exit
 if command -v yazi >/dev/null 2>&1; then
@@ -1218,6 +1245,16 @@ fd_dir() { find . -type d -iname "*\$1*" 2>/dev/null; }
 
 # Show PATH entries one per line
 path() { echo "\$PATH" | tr ':' '\n'; }
+
+# Shell help - show comprehensive reference
+help() {
+  local ref_file="\$HOME/.config/shell-bootstrap/shell-reference.txt"
+  if [[ -f "\$ref_file" ]]; then
+    less -R "\$ref_file"
+  else
+    echo "Reference file not found. Run ~/shell-bootstrap/install.sh to create it."
+  fi
+}
 
 # zoxide
 if command -v zoxide >/dev/null 2>&1; then
@@ -1363,36 +1400,23 @@ EOF
 }
 
 print_next_steps() {
-  local secrets_file="${BOOTSTRAP_HOME}/secrets.env"
-  local missing=()
-
-  if [[ -z "${ATUIN_KEY:-}" || -z "${ATUIN_PASSWORD:-}" ]]; then
-    missing+=("Atuin sync")
-  fi
-  if [[ -z "${PET_SNIPPETS_TOKEN:-}" ]]; then
-    missing+=("Pet snippets sync")
-  fi
-
   echo ""
-  log "============================================"
-  log "Done! Run: exec zsh"
-  log "============================================"
-
-  if [[ ${#missing[@]} -gt 0 ]]; then
-    echo ""
-    log "Optional: To enable ${missing[*]}:"
-    log "  1. Edit ${secrets_file}"
-    log "  2. Uncomment and fill in the values"
-    log "  3. Re-run: ~/shell-bootstrap/install.sh"
-  fi
+  log "╔════════════════════════════════════════════════════════════════╗"
+  log "║  SETUP COMPLETE!                                              ║"
+  log "╠════════════════════════════════════════════════════════════════╣"
+  log "║  Run: exec zsh                                                ║"
+  log "║  Type: dev    (tmux dev session: Claude + yazi + shell)       ║"
+  log "║  Type: help   (keyboard shortcuts reference)                  ║"
+  log "╚════════════════════════════════════════════════════════════════╝"
+  echo ""
 }
 
 main() {
   generate_secrets_template
+  prompt_for_credentials
   install_apt_packages
   install_delta
   install_atuin
-  install_kitty
   install_yazi
   install_starship
   install_pet
@@ -1403,8 +1427,9 @@ main() {
   configure_atuin
   configure_git
   configure_pet
-  configure_kitty
   configure_yazi
+  configure_tmux
+  configure_shell_reference
   configure_claude_code
 
   write_bootstrap_zshrc

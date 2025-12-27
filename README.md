@@ -94,10 +94,30 @@ exec zsh
 | `Ctrl+Shift+T` | New tab |
 | `Ctrl+Alt+1-5` | Switch to tab 1-5 |
 
+### Tmux Shortcuts (Ctrl+A = prefix)
+
+| Shortcut | Action |
+|----------|--------|
+| `dev` | Launch dev session (Claude + yazi + shell) |
+| `Ctrl+A c` | Create new window |
+| `Ctrl+A \|` | Split vertically |
+| `Ctrl+A -` | Split horizontally |
+| `Ctrl+A h/j/k/l` | Navigate panes (vim-style) |
+| `Ctrl+A z` | Toggle pane zoom |
+| `Alt+1/2/3/4` | Switch to window 1-4 |
+| `Ctrl+A d` | Detach from session |
+| `Ctrl+A [` | Scroll/copy mode (q to exit) |
+| `Ctrl+A r` | Reload tmux config |
+
+**Dev Session Layout:**
+- Window 1 "workspace": Claude (2/3 left) | yazi (top right) + shell (bottom right)
+- Window 2 "reference": Keyboard shortcuts reference card
+
 ## Aliases
 
 | Alias | Command |
 |-------|---------|
+| `dev` | Launch tmux dev session |
 | `ll` | `ls -lAFh` (long listing, hidden files) |
 | `lt` | `ls -lAFht` (sorted by time) |
 | `gs` | `git status` |
@@ -119,11 +139,13 @@ exec zsh
 
 | Path | Purpose |
 |------|---------|
+| `~/.tmux.conf` | Tmux config (Ctrl+A prefix) |
 | `~/.config/kitty/kitty.conf` | Kitty terminal config |
 | `~/.config/kitty/dev.session` | Dev layout session |
 | `~/.config/yazi/` | Yazi file manager config |
 | `~/.config/shell-bootstrap/zshrc` | Main zsh config |
 | `~/.config/shell-bootstrap/secrets.env` | Sync credentials |
+| `~/.config/shell-bootstrap/shell-reference.txt` | Shortcuts reference |
 | `~/.config/starship.toml` | Prompt config |
 | `~/.config/atuin/config.toml` | History config |
 | `~/.config/pet/snippet.toml` | Saved snippets |
