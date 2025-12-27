@@ -26,6 +26,10 @@ mkdir -p "${BOOTSTRAP_HOME}" "${BOOTSTRAP_SHARE}" "${BOOTSTRAP_BIN}" "${ZSH_PLUG
 if [[ -f "${BOOTSTRAP_HOME}/secrets.env" ]]; then
   # shellcheck disable=SC1090
   source "${BOOTSTRAP_HOME}/secrets.env"
+  # Unset empty values so prompts will trigger for them
+  [[ -z "${ATUIN_KEY:-}" ]] && unset ATUIN_KEY
+  [[ -z "${ATUIN_PASSWORD:-}" ]] && unset ATUIN_PASSWORD
+  [[ -z "${PET_SNIPPETS_TOKEN:-}" ]] && unset PET_SNIPPETS_TOKEN
 fi
 
 ATUIN_USERNAME="${ATUIN_USERNAME:-$DEFAULT_ATUIN_USERNAME}"
@@ -88,6 +92,9 @@ prompt_for_credentials() {
 # These credentials enable sync features across machines.
 
 EOF
+  else
+    # Remove empty export lines from previous runs
+    sed -i '/^export [A-Z_]*=""$/d' "$secrets_file"
   fi
 
   # Prompt for Atuin credentials if not set
@@ -214,14 +221,14 @@ install_yazi() {
   esac
 
   tag="$(curl -fsSL https://api.github.com/repos/sxyazi/yazi/releases/latest | jq -r .tag_name)"
-  asset="yazi-${arch}-unknown-linux-gnu.zip"
+  asset="yazi-${arch}-unknown-linux-musl.zip"
   url="https://github.com/sxyazi/yazi/releases/download/${tag}/${asset}"
 
   tmpdir="$(mktemp -d)"
   curl -fsSL "$url" -o "${tmpdir}/yazi.zip"
   unzip -q "${tmpdir}/yazi.zip" -d "${tmpdir}"
-  install -m 0755 "${tmpdir}/yazi-${arch}-unknown-linux-gnu/yazi" "${BOOTSTRAP_BIN}/yazi"
-  install -m 0755 "${tmpdir}/yazi-${arch}-unknown-linux-gnu/ya" "${BOOTSTRAP_BIN}/ya"
+  install -m 0755 "${tmpdir}/yazi-${arch}-unknown-linux-musl/yazi" "${BOOTSTRAP_BIN}/yazi"
+  install -m 0755 "${tmpdir}/yazi-${arch}-unknown-linux-musl/ya" "${BOOTSTRAP_BIN}/ya"
   rm -rf "${tmpdir}"
 }
 
