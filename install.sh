@@ -938,10 +938,7 @@ TMUX_CONF
   # Create dev session launcher script
   cat > "${dev_script}" <<'DEV_SESSION'
 #!/usr/bin/env bash
-# Dev session - Three tabs: Claude+shell, yazi, reference
-# Tab 1: Claude (top 80%) + shell (bottom ~8 lines)
-# Tab 2: yazi file manager
-# Tab 3: shortcuts/reference card
+# Dev session - Four tabs: claude, shell, files, help
 
 SESSION="dev"
 WORKING_DIR="${1:-$(pwd)}"
@@ -952,23 +949,23 @@ if tmux has-session -t "$SESSION" 2>/dev/null; then
   exit 0
 fi
 
-# Tab 1: Claude + small shell
+# Tab 1: Claude
 tmux new-session -d -s "$SESSION" -n "claude" -c "$WORKING_DIR"
-tmux split-window -v -l 8 -c "$WORKING_DIR"  # 8 lines for shell at bottom
-tmux select-pane -t 0
 tmux send-keys "claude" Enter
 
-# Tab 2: yazi file manager
+# Tab 2: zsh shell
+tmux new-window -t "$SESSION" -n "shell" -c "$WORKING_DIR"
+
+# Tab 3: yazi file manager
 tmux new-window -t "$SESSION" -n "files" -c "$WORKING_DIR"
 tmux send-keys "yazi" Enter
 
-# Tab 3: reference/shortcuts
+# Tab 4: reference/shortcuts
 tmux new-window -t "$SESSION" -n "help"
 tmux send-keys "less -R ~/.config/shell-bootstrap/shell-reference.txt" Enter
 
-# Start on Claude tab, focused on Claude pane
+# Start on Claude tab
 tmux select-window -t "$SESSION:1"
-tmux select-pane -t 0
 
 # Attach to session
 tmux attach-session -t "$SESSION"
@@ -1188,7 +1185,7 @@ if command -v docker >/dev/null 2>&1; then
   alias di='docker images'
 fi
 
-# Dev session (tmux: claude|files|help tabs)
+# Dev session (tmux: claude|shell|files|help tabs)
 alias dev='dev-session'
 
 # Yazi file manager with cd on exit
