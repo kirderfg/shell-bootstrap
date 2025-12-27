@@ -203,6 +203,8 @@ install_atuin() {
   fi
   log "Installing Atuin..."
   curl -fsSL https://setup.atuin.sh | bash
+  # Add to PATH for current session so configure_atuin can find it
+  export PATH="$HOME/.atuin/bin:$PATH"
 }
 
 install_yazi() {
