@@ -938,8 +938,10 @@ TMUX_CONF
   # Create dev session launcher script
   cat > "${dev_script}" <<'DEV_SESSION'
 #!/usr/bin/env bash
-# Dev session - Claude Code + File Explorer + Shell
-# Layout: 2/3 Claude | 1/3 (yazi top, shell bottom)
+# Dev session - Three tabs: Claude+shell, yazi, reference
+# Tab 1: Claude (top 80%) + shell (bottom ~8 lines)
+# Tab 2: yazi file manager
+# Tab 3: shortcuts/reference card
 
 SESSION="dev"
 WORKING_DIR="${1:-$(pwd)}"
@@ -950,35 +952,21 @@ if tmux has-session -t "$SESSION" 2>/dev/null; then
   exit 0
 fi
 
-# Create new session with first window (workspace)
-tmux new-session -d -s "$SESSION" -n "workspace" -c "$WORKING_DIR"
-
-# Set up the layout: Claude (2/3) | right side (1/3)
-# First split: 67% left (Claude), 33% right
-tmux split-window -h -p 33 -c "$WORKING_DIR"
-
-# Now we're in the right pane, split it vertically
-# Top: yazi (60%), Bottom: shell (40%)
-tmux split-window -v -p 40 -c "$WORKING_DIR"
-
-# Select panes and start applications
-# Pane 0: Claude (left, main)
-# Pane 1: yazi (right top)
-# Pane 2: shell (right bottom)
-
-# Start yazi in pane 1 (right top)
-tmux select-pane -t 1
-tmux send-keys "yazi" Enter
-
-# Start claude in pane 0 (left)
+# Tab 1: Claude + small shell
+tmux new-session -d -s "$SESSION" -n "claude" -c "$WORKING_DIR"
+tmux split-window -v -l 8 -c "$WORKING_DIR"  # 8 lines for shell at bottom
 tmux select-pane -t 0
 tmux send-keys "claude" Enter
 
-# Create second window for reference card
-tmux new-window -t "$SESSION" -n "reference"
+# Tab 2: yazi file manager
+tmux new-window -t "$SESSION" -n "files" -c "$WORKING_DIR"
+tmux send-keys "yazi" Enter
+
+# Tab 3: reference/shortcuts
+tmux new-window -t "$SESSION" -n "help"
 tmux send-keys "less -R ~/.config/shell-bootstrap/shell-reference.txt" Enter
 
-# Go back to workspace window, focus on Claude pane
+# Start on Claude tab, focused on Claude pane
 tmux select-window -t "$SESSION:1"
 tmux select-pane -t 0
 
@@ -1030,7 +1018,7 @@ configure_shell_reference() {
 │ /n/N          Find / next/prev match             │  └──────────────────────────────────────────────────┘
 │ on/os/om      Sort: name/size/modified           │
 │ q             Quit                               │  ┌─ TMUX (Ctrl+A = prefix) ─────────────────────────┐
-└──────────────────────────────────────────────────┘  │ dev           Launch dev session (Claude+yazi)   │
+└──────────────────────────────────────────────────┘  │ dev           Dev session (3 tabs)               │
                                                       │ Ctrl+A c      Create window                      │
 ┌─ GIT ALIASES ────────────────────────────────────┐  │ Ctrl+A |/-    Split vertical/horizontal          │
 │ gs            git status                         │  │ Ctrl+A h/j/k/l Navigate panes (vim-style)        │
@@ -1040,7 +1028,7 @@ configure_shell_reference() {
 └──────────────────────────────────────────────────┘  │ Ctrl+A [      Scroll/copy mode (q to exit)       │
                                                       │ Ctrl+A r      Reload tmux config                 │
 ┌─ ALIASES & FUNCTIONS ────────────────────────────┐  └──────────────────────────────────────────────────┘
-│ dev           Dev session (Claude+yazi+shell)    │
+│ dev           Dev session: claude|files|help     │
 │ ll/la         Long list with hidden files        │  ┌─ CLAUDE CODE ──────────────────────────────────────┐
 │ lt/lS         List by time/size                  │  │ claude        Start Claude Code                  │
 │ ../...        Go up 1/2 directories              │  │ claude -c     Continue last session              │
@@ -1200,7 +1188,7 @@ if command -v docker >/dev/null 2>&1; then
   alias di='docker images'
 fi
 
-# Dev session (tmux with Claude + yazi + shell)
+# Dev session (tmux: claude|files|help tabs)
 alias dev='dev-session'
 
 # Yazi file manager with cd on exit
@@ -1412,7 +1400,7 @@ print_next_steps() {
   log "║  SETUP COMPLETE!                                              ║"
   log "╠════════════════════════════════════════════════════════════════╣"
   log "║  Run: exec zsh                                                ║"
-  log "║  Type: dev    (tmux dev session: Claude + yazi + shell)       ║"
+  log "║  Type: dev    (tmux: claude|files|help tabs)                  ║"
   log "║  Type: help   (keyboard shortcuts reference)                  ║"
   log "╚════════════════════════════════════════════════════════════════╝"
   echo ""
