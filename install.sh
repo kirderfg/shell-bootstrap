@@ -882,7 +882,9 @@ prepend_keymap = [
   { on = ["D"], run = "remove --permanently", desc = "Delete permanently" },
   { on = ["a"], run = "create", desc = "Create file/directory" },
   { on = ["r"], run = "rename --cursor=before_ext", desc = "Rename" },
+  { on = ["o"], run = "open", desc = "Open file" },
   { on = ["O"], run = "open --interactive", desc = "Open with..." },
+  { on = ["w"], run = "shell 'wslview \"$0\"' --confirm", desc = "Open in Windows" },
   { on = ["W"], run = "shell 'wslview \"$0\"' --confirm", desc = "Open in Windows" },
 
   # Search
@@ -890,10 +892,10 @@ prepend_keymap = [
   { on = ["n"], run = "find_arrow", desc = "Next match" },
   { on = ["N"], run = "find_arrow --previous", desc = "Previous match" },
 
-  # Sorting
-  { on = ["o", "n"], run = "sort natural --dir-first", desc = "Sort by name" },
-  { on = ["o", "s"], run = "sort size --dir-first --reverse", desc = "Sort by size" },
-  { on = ["o", "m"], run = "sort mtime --dir-first --reverse", desc = "Sort by modified" },
+  # Sorting (s prefix)
+  { on = ["s", "n"], run = "sort natural --dir-first", desc = "Sort by name" },
+  { on = ["s", "s"], run = "sort size --dir-first --reverse", desc = "Sort by size" },
+  { on = ["s", "m"], run = "sort mtime --dir-first --reverse", desc = "Sort by modified" },
 
   # Quick jumps
   { on = ["g", "h"], run = "cd ~", desc = "Go home" },
