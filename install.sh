@@ -15,6 +15,10 @@ DEFAULT_ATUIN_USERNAME="kirderfg"
 DEFAULT_ATUIN_EMAIL="fredrik@thegustavssons.se"
 DEFAULT_PET_SNIPPETS_REPO="https://github.com/kirderfg/shell-snippets-private"
 
+# Non-interactive mode: skip prompts, use env vars directly (for 1Password/CI)
+# Set SHELL_BOOTSTRAP_NONINTERACTIVE=1 to enable
+NONINTERACTIVE="${SHELL_BOOTSTRAP_NONINTERACTIVE:-}"
+
 BOOTSTRAP_HOME="${HOME}/.config/shell-bootstrap"
 BOOTSTRAP_SHARE="${HOME}/.local/share/shell-bootstrap"
 BOOTSTRAP_BIN="${HOME}/.local/bin"
@@ -22,8 +26,8 @@ ZSH_PLUGINS_DIR="${HOME}/.local/share/zsh-plugins"
 
 mkdir -p "${BOOTSTRAP_HOME}" "${BOOTSTRAP_SHARE}" "${BOOTSTRAP_BIN}" "${ZSH_PLUGINS_DIR}"
 
-# Optional local secrets file (recommended for WSL)
-if [[ -f "${BOOTSTRAP_HOME}/secrets.env" ]]; then
+# Optional local secrets file (skip in non-interactive mode - secrets come from env/1Password)
+if [[ -z "$NONINTERACTIVE" && -f "${BOOTSTRAP_HOME}/secrets.env" ]]; then
   # shellcheck disable=SC1090
   source "${BOOTSTRAP_HOME}/secrets.env"
   # Unset empty values so prompts will trigger for them
@@ -66,6 +70,22 @@ append_block_once() {
 }
 
 prompt_for_credentials() {
+  # Skip prompts in non-interactive mode (secrets from env/1Password)
+  if [[ -n "$NONINTERACTIVE" ]]; then
+    log "Non-interactive mode: using credentials from environment variables"
+    if [[ -n "${ATUIN_USERNAME:-}" && -n "${ATUIN_PASSWORD:-}" && -n "${ATUIN_KEY:-}" ]]; then
+      log "  Atuin credentials: found"
+    else
+      log "  Atuin credentials: incomplete (set ATUIN_USERNAME, ATUIN_PASSWORD, ATUIN_KEY)"
+    fi
+    if [[ -n "${PET_SNIPPETS_TOKEN:-}" ]]; then
+      log "  Pet snippets token: found"
+    else
+      log "  Pet snippets token: not set"
+    fi
+    return
+  fi
+
   local secrets_file="${BOOTSTRAP_HOME}/secrets.env"
   local need_prompts=false
 
@@ -279,6 +299,20 @@ install_yazi() {
   install -m 0755 "${tmpdir}/yazi-${arch}-unknown-linux-musl/yazi" "${BOOTSTRAP_BIN}/yazi"
   install -m 0755 "${tmpdir}/yazi-${arch}-unknown-linux-musl/ya" "${BOOTSTRAP_BIN}/ya"
   rm -rf "${tmpdir}"
+}
+
+install_op() {
+  if require_cmd op; then
+    log "1Password CLI already installed."
+    return
+  fi
+  log "Installing 1Password CLI..."
+
+  # Add 1Password apt repository and install
+  curl -fsSL https://downloads.1password.com/linux/keys/1password.asc | ${SUDO} gpg --dearmor -o /usr/share/keyrings/1password-archive-keyring.gpg 2>/dev/null || true
+  echo "deb [arch=amd64 signed-by=/usr/share/keyrings/1password-archive-keyring.gpg] https://downloads.1password.com/linux/debian/amd64 stable main" | ${SUDO} tee /etc/apt/sources.list.d/1password.list >/dev/null
+  ${SUDO} apt-get update -y
+  ${SUDO} apt-get install -y 1password-cli
 }
 
 install_claude_code() {
@@ -654,6 +688,143 @@ install_zsh_plugins() {
   fi
 }
 
+configure_op() {
+  log "Configuring 1Password secrets..."
+
+  local op_config_dir="${HOME}/.config/dev_env"
+  local op_token_file="${op_config_dir}/op_token"
+  local op_secrets_file="${op_config_dir}/op-secrets.sh"
+  local op_init_file="${op_config_dir}/init.sh"
+  local op_vault="${OP_VAULT:-DEV_CLI}"
+
+  mkdir -p "${op_config_dir}"
+  chmod 700 "${op_config_dir}"
+
+  # Get token from env var or prompt
+  local token="${OP_SERVICE_ACCOUNT_TOKEN:-}"
+
+  if [[ -z "$token" && -f "$op_token_file" ]]; then
+    token="$(cat "$op_token_file")"
+    log "Found existing 1Password token"
+  fi
+
+  if [[ -z "$token" && -z "$NONINTERACTIVE" ]]; then
+    echo ""
+    log "╔════════════════════════════════════════════════════════════════╗"
+    log "║  1PASSWORD SETUP                                              ║"
+    log "║  Secrets are fetched on-demand and never stored as plaintext  ║"
+    log "╚════════════════════════════════════════════════════════════════╝"
+    echo ""
+    echo "  Get your Service Account Token from:"
+    echo "  1Password → Settings → Developer → Service Accounts"
+    echo ""
+    read -rsp "  Enter 1Password Service Account Token (or press Enter to skip): " token
+    echo ""
+  fi
+
+  if [[ -z "$token" ]]; then
+    log "No 1Password token provided. Secrets will not be available."
+    log "You can configure later by running install.sh again with OP_SERVICE_ACCOUNT_TOKEN set."
+    return
+  fi
+
+  # Save token
+  echo "$token" > "$op_token_file"
+  chmod 600 "$op_token_file"
+
+  # Verify token works
+  if ! OP_SERVICE_ACCOUNT_TOKEN="$token" op whoami &>/dev/null; then
+    log "Warning: 1Password token verification failed. Check your token."
+    rm -f "$op_token_file"
+    return
+  fi
+  log "1Password token verified successfully"
+
+  # Export for use in this script
+  export OP_SERVICE_ACCOUNT_TOKEN="$token"
+
+  # Create op-secrets.sh helper
+  cat > "$op_secrets_file" <<'OPSECRETS'
+#!/bin/bash
+# 1Password secrets loader - source this file to load secrets on-demand
+# Secrets are fetched from 1Password and never touch disk
+
+OP_VAULT="${OP_VAULT:-DEV_CLI}"
+
+op-check() {
+    if ! command -v op &>/dev/null; then
+        return 1
+    fi
+    if [ -z "$OP_SERVICE_ACCOUNT_TOKEN" ]; then
+        return 1
+    fi
+    return 0
+}
+
+op-load-secret() {
+    local var_name="$1"
+    local secret_ref="$2"
+    if ! op-check 2>/dev/null; then
+        return 1
+    fi
+    local value
+    value=$(op read "$secret_ref" 2>/dev/null)
+    if [ $? -eq 0 ] && [ -n "$value" ]; then
+        export "$var_name"="$value"
+        return 0
+    fi
+    return 1
+}
+
+op-load-all-secrets() {
+    if ! op-check; then
+        return 1
+    fi
+
+    local loaded=0 failed=0
+
+    # Atuin credentials
+    op-load-secret ATUIN_KEY "op://${OP_VAULT}/Atuin/key" && ((loaded++)) || ((failed++))
+    op-load-secret ATUIN_PASSWORD "op://${OP_VAULT}/Atuin/password" && ((loaded++)) || ((failed++))
+    op-load-secret ATUIN_USERNAME "op://${OP_VAULT}/Atuin/username" && ((loaded++)) || ((failed++))
+
+    # Pet snippets
+    op-load-secret PET_SNIPPETS_TOKEN "op://${OP_VAULT}/Pet/PAT" && ((loaded++)) || ((failed++))
+
+    # OpenAI
+    op-load-secret OPENAI_API_KEY "op://${OP_VAULT}/OpenAI/api_key" && ((loaded++)) || ((failed++))
+
+    # GitHub token
+    op-load-secret GITHUB_TOKEN "op://${OP_VAULT}/GitHub/PAT" && ((loaded++)) || ((failed++))
+
+    echo "[op-secrets] Loaded ${loaded} secrets (${failed} not found/configured)" >&2
+    return 0
+}
+
+# Auto-load if sourced
+if [[ "${BASH_SOURCE[0]}" != "${0}" ]] || [[ -n "$ZSH_VERSION" ]]; then
+    op-load-all-secrets
+fi
+OPSECRETS
+  chmod 755 "$op_secrets_file"
+
+  # Create init.sh
+  cat > "$op_init_file" <<OPINIT
+# 1Password secrets loader (auto-generated by shell-bootstrap)
+export OP_SERVICE_ACCOUNT_TOKEN="\$(cat ~/.config/dev_env/op_token 2>/dev/null)"
+if [ -f ~/.config/dev_env/op-secrets.sh ]; then
+    source ~/.config/dev_env/op-secrets.sh
+fi
+OPINIT
+  chmod 644 "$op_init_file"
+
+  # Load secrets now for use in subsequent configure_* functions
+  log "Loading secrets from 1Password..."
+  source "$op_secrets_file"
+
+  log "1Password configuration complete"
+}
+
 configure_starship() {
   log "Writing Starship config..."
   mkdir -p "${HOME}/.config"
@@ -728,28 +899,38 @@ EOF
       if atuin login -u "${ATUIN_USERNAME}" -p "${ATUIN_PASSWORD}" -k "${ATUIN_KEY}" 2>/dev/null; then
         log "Atuin login successful!"
       else
-        log "Atuin login failed. Check credentials in: ${BOOTSTRAP_HOME}/secrets.env"
+        if [[ -n "$NONINTERACTIVE" ]]; then
+          log "Atuin login failed. Check ATUIN_USERNAME, ATUIN_PASSWORD, ATUIN_KEY env vars"
+        else
+          log "Atuin login failed. Check credentials in: ${BOOTSTRAP_HOME}/secrets.env"
+        fi
       fi
     else
       # Login without key - atuin will use existing or prompt
       if atuin login -u "${ATUIN_USERNAME}" -p "${ATUIN_PASSWORD}" 2>/dev/null; then
         log "Atuin login successful!"
       else
-        log "Atuin login failed. Check credentials in: ${BOOTSTRAP_HOME}/secrets.env"
+        if [[ -n "$NONINTERACTIVE" ]]; then
+          log "Atuin login failed. Check ATUIN_USERNAME, ATUIN_PASSWORD env vars"
+        else
+          log "Atuin login failed. Check credentials in: ${BOOTSTRAP_HOME}/secrets.env"
+        fi
       fi
     fi
 
-    # Auto-capture and save the key after successful login
-    local captured_key
-    captured_key=$(atuin key 2>/dev/null || true)
-    if [[ -n "$captured_key" && "$captured_key" != "${ATUIN_KEY:-}" ]]; then
-      export ATUIN_KEY="$captured_key"
-      if ! grep -q "^export ATUIN_KEY=" "$secrets_file" 2>/dev/null; then
-        echo "export ATUIN_KEY=\"$captured_key\"" >> "$secrets_file"
-      else
-        sed -i "s|^export ATUIN_KEY=.*|export ATUIN_KEY=\"$captured_key\"|" "$secrets_file"
+    # Auto-capture and save the key after successful login (skip in non-interactive mode)
+    if [[ -z "$NONINTERACTIVE" ]]; then
+      local captured_key
+      captured_key=$(atuin key 2>/dev/null || true)
+      if [[ -n "$captured_key" && "$captured_key" != "${ATUIN_KEY:-}" ]]; then
+        export ATUIN_KEY="$captured_key"
+        if ! grep -q "^export ATUIN_KEY=" "$secrets_file" 2>/dev/null; then
+          echo "export ATUIN_KEY=\"$captured_key\"" >> "$secrets_file"
+        else
+          sed -i "s|^export ATUIN_KEY=.*|export ATUIN_KEY=\"$captured_key\"|" "$secrets_file"
+        fi
+        log "Auto-captured ATUIN_KEY to secrets.env"
       fi
-      log "Auto-captured ATUIN_KEY to secrets.env"
     fi
 
     atuin sync 2>/dev/null && log "Atuin history synced." || true
@@ -1476,9 +1657,10 @@ if [[ -f "${ZSH_PLUGINS_DIR}/zsh-syntax-highlighting/zsh-syntax-highlighting.zsh
   source "${ZSH_PLUGINS_DIR}/zsh-syntax-highlighting/zsh-syntax-highlighting.zsh"
 fi
 
-# Local secrets (WSL) if present
-if [[ -f "\$HOME/.config/shell-bootstrap/secrets.env" ]]; then
-  source "\$HOME/.config/shell-bootstrap/secrets.env"
+# 1Password secrets loader (configured via dev_env)
+# Secrets are fetched on-demand from 1Password, never stored as plaintext
+if [[ -f "\$HOME/.config/dev_env/init.sh" ]]; then
+  source "\$HOME/.config/dev_env/init.sh"
 fi
 EOF
 }
@@ -1535,6 +1717,11 @@ EOF
 }
 
 generate_secrets_template() {
+  # Skip in non-interactive mode (secrets come from 1Password/environment)
+  if [[ -n "$NONINTERACTIVE" ]]; then
+    return
+  fi
+
   local secrets_file="${BOOTSTRAP_HOME}/secrets.env"
   if [[ -f "$secrets_file" ]]; then
     return
@@ -1585,9 +1772,8 @@ print_next_steps() {
 }
 
 main() {
-  generate_secrets_template
-  prompt_for_credentials
   install_apt_packages
+  install_op
   install_glow
   install_delta
   install_atuin
@@ -1597,10 +1783,11 @@ main() {
   install_zsh_plugins
   install_claude_code
 
+  configure_op          # Prompts for token (if needed), loads secrets from 1Password
   configure_starship
-  configure_atuin
+  configure_atuin       # Uses secrets from 1Password
   configure_git
-  configure_pet
+  configure_pet         # Uses secrets from 1Password
   configure_yazi
   configure_tmux
   configure_shell_reference
