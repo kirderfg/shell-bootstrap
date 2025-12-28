@@ -1421,11 +1421,31 @@ configure_shell_reference() {
 │ claude "commit msg" < <(git diff --staged)       │
 └──────────────────────────────────────────────────┘
 
-┌─ WINDOWS TERMINAL ───────────────────────────────┐
-│ Ctrl+Tab       Next tab                          │
-│ Ctrl+Shift+Tab Previous tab                      │
-│ Ctrl+Alt+1-9   Switch to tab 1-9                 │
-│ Ctrl+Shift+T   New tab                           │
+┌─ DEVPOD (Remote Containers) ─────────────────────┐  ┌─ AZURE VM ───────────────────────────────────────┐
+│ ─ Create Workspace (with secrets) ─              │  │ ssh dev-vm         SSH to dev VM                 │
+│ devpod up github.com/user/repo \                 │  │ az vm start ...    Start VM                      │
+│   --provider ssh -o HOST=dev-vm \                │  │ az vm deallocate   Stop VM (save costs)          │
+│   --env OP_SERVICE_ACCOUNT_TOKEN=\               │  │ az vm show ...     Check VM status               │
+│   $(cat ~/.config/dev_env/op_token)              │  │                                                   │
+│                                                  │  │ ─ Scripts (from dev_env/) ─                      │
+│ ─ Manage Workspaces ─                            │  │ ./scripts/start-vm.sh      Start VM              │
+│ devpod list          List all workspaces         │  │ ./scripts/stop-vm.sh       Stop VM               │
+│ devpod ssh <ws>      SSH into workspace          │  │ ./scripts/sync-secrets.sh  Sync 1Password token  │
+│ devpod stop <ws>     Stop workspace              │  │ ./scripts/ssh-connect.sh   SSH to VM             │
+│ devpod up <ws>       Restart stopped workspace   │  │                                                   │
+│ devpod delete <ws>   Delete workspace            │  │ ─ Token persists on VM disk across restarts ─    │
+│                                                  │  └───────────────────────────────────────────────────┘
+│ ─ With VS Code ─                                 │
+│ devpod up ... --ide vscode                       │  ┌─ 1PASSWORD SECRETS ────────────────────────────────┐
+│                                                  │  │ op read 'op://DEV_CLI/Item/field'                 │
+│ Tip: Use Ctrl+S (pet) for quick snippets!        │  │ op item list --vault DEV_CLI                      │
+└──────────────────────────────────────────────────┘  │ op whoami           Check auth status             │
+                                                      │                                                    │
+┌─ WINDOWS TERMINAL ───────────────────────────────┐  │ Secrets auto-loaded on shell start:               │
+│ Ctrl+Tab       Next tab                          │  │   GITHUB_TOKEN, OPENAI_API_KEY, ATUIN_*           │
+│ Ctrl+Shift+Tab Previous tab                      │  │                                                    │
+│ Ctrl+Alt+1-9   Switch to tab 1-9                 │  │ gh CLI + git credentials configured automatically │
+│ Ctrl+Shift+T   New tab                           │  └────────────────────────────────────────────────────┘
 │ Ctrl+Shift+W   Close tab                         │
 │ Ctrl+Shift+D   Duplicate tab                     │
 │ Alt+Shift+-    Split pane horizontal             │
@@ -1436,7 +1456,7 @@ configure_shell_reference() {
 
 ┌─ CONFIG FILES ───────────────────────────────────────────────────────────────────────────────────────────┐
 │ ~/.config/starship.toml  ~/.config/atuin/config.toml  ~/.config/pet/{config,snippet}.toml  ~/.config/yazi/│
-│ ~/.config/shell-bootstrap/{zshrc,secrets.env}  ~/CLAUDE.md                                               │
+│ ~/.config/shell-bootstrap/{zshrc}  ~/.config/dev_env/{op_token,init.sh}  ~/CLAUDE.md                     │
 └──────────────────────────────────────────────────────────────────────────────────────────────────────────┘
 SHELL_REF
 }
