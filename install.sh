@@ -155,26 +155,8 @@ EOF
   echo ""
 }
 
-fix_broken_repos() {
-  # Fix common broken Docker repo issue where $(lsb_release) wasn't evaluated
-  local docker_list="/etc/apt/sources.list.d/docker.list"
-  if [[ -f "$docker_list" ]] && grep -q '$(lsb_release' "$docker_list" 2>/dev/null; then
-    log "Fixing broken Docker repository configuration..."
-    ${SUDO} rm -f "$docker_list"
-
-    # Re-add Docker repo correctly
-    ${SUDO} install -m 0755 -d /etc/apt/keyrings
-    curl -fsSL https://download.docker.com/linux/ubuntu/gpg | ${SUDO} gpg --dearmor -o /etc/apt/keyrings/docker.gpg 2>/dev/null || true
-    ${SUDO} chmod a+r /etc/apt/keyrings/docker.gpg 2>/dev/null || true
-
-    echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable" | ${SUDO} tee "$docker_list" > /dev/null
-    log "Docker repository fixed."
-  fi
-}
-
 install_apt_packages() {
   log "Installing base packages via apt..."
-  fix_broken_repos
   ${SUDO} apt-get update -y
 
   ${SUDO} apt-get install -y \
