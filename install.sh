@@ -207,13 +207,14 @@ install_glow() {
   esac
 
   tag="$(curl -fsSL https://api.github.com/repos/charmbracelet/glow/releases/latest | jq -r .tag_name)"
-  asset="glow_${tag#v}_linux_${arch}.tar.gz"
+  local version="${tag#v}"
+  asset="glow_${version}_Linux_${arch}.tar.gz"
   url="https://github.com/charmbracelet/glow/releases/download/${tag}/${asset}"
 
   tmpdir="$(mktemp -d)"
   curl -fsSL "$url" -o "${tmpdir}/glow.tgz"
   tar -xzf "${tmpdir}/glow.tgz" -C "${tmpdir}"
-  install -m 0755 "${tmpdir}/glow" "${BOOTSTRAP_BIN}/glow"
+  install -m 0755 "${tmpdir}/glow_${version}_Linux_${arch}/glow" "${BOOTSTRAP_BIN}/glow"
   rm -rf "${tmpdir}"
 }
 
