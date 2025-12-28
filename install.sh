@@ -189,6 +189,7 @@ install_apt_packages() {
 
   # Optional (nice-to-have) packages; don't hard-fail if not present in the image
   ${SUDO} apt-get install -y gh || true
+  ${SUDO} apt-get install -y wslu || true  # WSL utilities (wslview for opening files in Windows)
 }
 
 install_delta() {
@@ -842,6 +843,10 @@ edit = [
 open = [
   { run = 'xdg-open "$@"', desc = "Open", for = "linux" },
 ]
+# Open with Windows native app (WSL)
+windows = [
+  { run = 'wslview "$@"', desc = "Open in Windows", for = "unix" },
+]
 YAZI_CONF
 
   # Yazi keymap
@@ -877,6 +882,8 @@ prepend_keymap = [
   { on = ["D"], run = "remove --permanently", desc = "Delete permanently" },
   { on = ["a"], run = "create", desc = "Create file/directory" },
   { on = ["r"], run = "rename --cursor=before_ext", desc = "Rename" },
+  { on = ["O"], run = "open --interactive", desc = "Open with..." },
+  { on = ["W"], run = "shell 'wslview \"$0\"' --confirm", desc = "Open in Windows" },
 
   # Search
   { on = ["/"], run = "find --smart", desc = "Find" },
@@ -1123,6 +1130,8 @@ configure_shell_reference() {
 │ p/P           Paste / paste overwrite            │  │ Ctrl+T        Fuzzy find files, insert path      │
 │ d/D           Trash / delete permanently         │  │ Alt+C         Fuzzy cd into subdirectory         │
 │ a/r           Create / rename                    │  │ **<Tab>       Trigger fzf completion             │
+│ W             Open in Windows (wslview)          │                                                      │
+│ O             Open with... (choose opener)       │                                                      │
 │ /n/N          Find / next/prev match             │  └──────────────────────────────────────────────────┘
 │ on/os/om      Sort: name/size/modified           │
 │ q             Quit                               │  ┌─ TMUX (Ctrl+A = prefix) ─────────────────────────┐
