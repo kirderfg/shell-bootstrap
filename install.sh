@@ -953,6 +953,47 @@ configure_git() {
   fi
 }
 
+configure_github() {
+  log "Configuring GitHub CLI and git authentication..."
+
+  # Check if gh is available
+  if ! command -v gh >/dev/null 2>&1; then
+    log "GitHub CLI (gh) not installed, skipping GitHub configuration."
+    return
+  fi
+
+  # Check if already authenticated
+  if gh auth status &>/dev/null; then
+    log "GitHub CLI already authenticated."
+    # Ensure git credential helper is configured
+    git config --global credential.helper "!gh auth git-credential"
+    log "Git configured to use GitHub CLI for authentication."
+    return
+  fi
+
+  # Check if GITHUB_TOKEN is available (from 1Password)
+  if [[ -z "${GITHUB_TOKEN:-}" ]]; then
+    if [[ -n "$NONINTERACTIVE" ]]; then
+      log "GITHUB_TOKEN not set. GitHub authentication skipped."
+    else
+      log "GITHUB_TOKEN not set. Run 'gh auth login' to authenticate manually."
+    fi
+    return
+  fi
+
+  # Authenticate gh using the token from 1Password
+  log "Authenticating GitHub CLI with token from 1Password..."
+  if echo "${GITHUB_TOKEN}" | gh auth login --with-token 2>/dev/null; then
+    log "GitHub CLI authenticated successfully!"
+
+    # Configure git to use gh for credential management
+    git config --global credential.helper "!gh auth git-credential"
+    log "Git configured to use GitHub CLI for authentication."
+  else
+    log "Warning: GitHub CLI authentication failed. Check your GITHUB_TOKEN."
+  fi
+}
+
 configure_pet() {
   log "Configuring pet..."
   mkdir -p "${HOME}/.config/pet"
@@ -1784,6 +1825,7 @@ main() {
   install_claude_code
 
   configure_op          # Prompts for token (if needed), loads secrets from 1Password
+  configure_github      # Uses GITHUB_TOKEN from 1Password for gh CLI + git auth
   configure_starship
   configure_atuin       # Uses secrets from 1Password
   configure_git
