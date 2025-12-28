@@ -253,50 +253,113 @@ configure_claude_code() {
 
   mkdir -p "${claude_dir}"
 
-  # Create status line script with git info, cost tracking, and context usage
+  # Create enhanced status line script
   cat > "${statusline_script}" <<'STATUSLINE_EOF'
 #!/bin/bash
-# Claude Code Status Line - shell-bootstrap
-# Shows: model, git branch, cost, context usage
+# Claude Code Status Line - shell-bootstrap (enhanced)
+# Shows: model icon, git branch, cost, context bar, cwd
 
 input=$(cat)
 
+# ANSI color codes
+C_RESET="\033[0m"
+C_BOLD="\033[1m"
+C_DIM="\033[2m"
+C_CYAN="\033[36m"
+C_GREEN="\033[32m"
+C_YELLOW="\033[33m"
+C_RED="\033[31m"
+C_MAGENTA="\033[35m"
+C_BLUE="\033[34m"
+
 # Parse JSON input
 MODEL=$(echo "$input" | jq -r '.model.display_name // "Claude"')
+MODEL_ID=$(echo "$input" | jq -r '.model.model_id // ""')
 COST=$(echo "$input" | jq -r '.cost.total_cost_usd // 0')
 INPUT_TOKENS=$(echo "$input" | jq -r '.context_window.current_usage.input_tokens // 0')
 CONTEXT_SIZE=$(echo "$input" | jq -r '.context_window.context_window_size // 200000')
+CWD=$(echo "$input" | jq -r '.cwd // ""')
 
-# Format cost (show if > $0.001)
+# Model indicator with icon
+MODEL_ICON="◆"
+MODEL_COLOR="$C_CYAN"
+case "$MODEL_ID" in
+  *opus*) MODEL_ICON="◆"; MODEL_COLOR="$C_MAGENTA" ;;
+  *sonnet*) MODEL_ICON="●"; MODEL_COLOR="$C_CYAN" ;;
+  *haiku*) MODEL_ICON="○"; MODEL_COLOR="$C_GREEN" ;;
+esac
+# Short model name
+SHORT_MODEL=$(echo "$MODEL" | sed -E 's/Claude ([0-9.]+) (Opus|Sonnet|Haiku).*/\2/')
+MODEL_STR="${MODEL_COLOR}${MODEL_ICON} ${SHORT_MODEL}${C_RESET}"
+
+# Format cost with color (green < $0.10, yellow < $0.50, red >= $0.50)
 COST_STR=""
 if (( $(echo "$COST > 0.001" | bc -l 2>/dev/null || echo 0) )); then
-  COST_STR=" | \$$(printf '%.3f' "$COST")"
+  COST_COLOR="$C_GREEN"
+  if (( $(echo "$COST >= 0.50" | bc -l 2>/dev/null || echo 0) )); then
+    COST_COLOR="$C_RED"
+  elif (( $(echo "$COST >= 0.10" | bc -l 2>/dev/null || echo 0) )); then
+    COST_COLOR="$C_YELLOW"
+  fi
+  COST_STR=" ${C_DIM}│${C_RESET} ${COST_COLOR}\$$(printf '%.2f' "$COST")${C_RESET}"
 fi
 
-# Context usage percentage
+# Context usage with visual bar and color thresholds
+CTX_STR=""
 if [[ "$CONTEXT_SIZE" -gt 0 && "$INPUT_TOKENS" -gt 0 ]]; then
   PCT=$(( INPUT_TOKENS * 100 / CONTEXT_SIZE ))
-  CTX_STR=" | ctx:${PCT}%"
-else
-  CTX_STR=""
+
+  # Color based on usage: green <50%, yellow <80%, red >=80%
+  CTX_COLOR="$C_GREEN"
+  if [[ $PCT -ge 80 ]]; then
+    CTX_COLOR="$C_RED"
+  elif [[ $PCT -ge 50 ]]; then
+    CTX_COLOR="$C_YELLOW"
+  fi
+
+  # Create mini progress bar (5 chars)
+  FILLED=$(( PCT / 20 ))
+  EMPTY=$(( 5 - FILLED ))
+  BAR=""
+  for ((i=0; i<FILLED; i++)); do BAR+="█"; done
+  for ((i=0; i<EMPTY; i++)); do BAR+="░"; done
+
+  CTX_STR=" ${C_DIM}│${C_RESET} ${CTX_COLOR}${BAR} ${PCT}%${C_RESET}"
 fi
 
-# Git branch (if in a repo)
+# Git branch with status (if in a repo)
 GIT_STR=""
 if git rev-parse --git-dir > /dev/null 2>&1; then
   BRANCH=$(git branch --show-current 2>/dev/null)
   if [[ -n "$BRANCH" ]]; then
-    # Check for uncommitted changes
-    if [[ -n $(git status --porcelain 2>/dev/null) ]]; then
-      GIT_STR=" | ${BRANCH}*"
-    else
-      GIT_STR=" | ${BRANCH}"
+    # Truncate long branch names
+    if [[ ${#BRANCH} -gt 20 ]]; then
+      BRANCH="${BRANCH:0:18}.."
     fi
+
+    # Check for changes
+    DIRTY=""
+    STAGED=$(git diff --cached --numstat 2>/dev/null | wc -l)
+    UNSTAGED=$(git diff --numstat 2>/dev/null | wc -l)
+    UNTRACKED=$(git ls-files --others --exclude-standard 2>/dev/null | wc -l)
+
+    if [[ $STAGED -gt 0 || $UNSTAGED -gt 0 || $UNTRACKED -gt 0 ]]; then
+      DIRTY="${C_YELLOW}*${C_RESET}"
+    fi
+
+    GIT_STR=" ${C_DIM}│${C_RESET} ${C_BLUE} ${BRANCH}${DIRTY}${C_RESET}"
   fi
 fi
 
+# Working directory (last 2 path segments)
+CWD_STR=""
+if [[ -n "$CWD" ]]; then
+  SHORT_CWD=$(echo "$CWD" | sed "s|^$HOME|~|" | awk -F'/' '{if(NF>2) print $(NF-1)"/"$NF; else print $0}')
+  CWD_STR=" ${C_DIM}│${C_RESET} ${C_DIM}${SHORT_CWD}${C_RESET}"
+fi
+
 # Assemble status line
-echo "[${MODEL}]${GIT_STR}${COST_STR}${CTX_STR}"
+echo -e "${MODEL_STR}${GIT_STR}${COST_STR}${CTX_STR}${CWD_STR}"
 STATUSLINE_EOF
 
   chmod +x "${statusline_script}"
@@ -1038,6 +1101,19 @@ configure_shell_reference() {
 │ duf           Disk usage sorted                  │  │ ! <cmd>       Run shell command inline           │
 │ h/help        History / this reference           │  │ Ctrl+C/D      Cancel / exit                      │
 └──────────────────────────────────────────────────┘  └──────────────────────────────────────────────────┘
+
+┌─ WINDOWS TERMINAL ───────────────────────────────┐
+│ Ctrl+Tab       Next tab                          │
+│ Ctrl+Shift+Tab Previous tab                      │
+│ Ctrl+Alt+1-9   Switch to tab 1-9                 │
+│ Ctrl+Shift+T   New tab                           │
+│ Ctrl+Shift+W   Close tab                         │
+│ Ctrl+Shift+D   Duplicate tab                     │
+│ Alt+Shift+-    Split pane horizontal             │
+│ Alt+Shift++    Split pane vertical               │
+│ Alt+Arrow      Move between panes                │
+│ Ctrl+Shift+P   Command palette                   │
+└──────────────────────────────────────────────────┘
 
 ┌─ CONFIG FILES ───────────────────────────────────────────────────────────────────────────────────────────┐
 │ ~/.config/starship.toml  ~/.config/atuin/config.toml  ~/.config/pet/{config,snippet}.toml  ~/.config/yazi/│
