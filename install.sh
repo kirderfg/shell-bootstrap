@@ -192,6 +192,31 @@ install_apt_packages() {
   ${SUDO} apt-get install -y wslu || true  # WSL utilities (wslview for opening files in Windows)
 }
 
+install_glow() {
+  if require_cmd glow; then
+    log "glow already installed."
+    return
+  fi
+  log "Installing glow (markdown renderer)..."
+  local arch tag asset url tmpdir
+  arch="$(uname -m)"
+  case "$arch" in
+    x86_64) arch="x86_64" ;;
+    aarch64|arm64) arch="arm64" ;;
+    *) log "Unsupported arch for glow: $arch"; return ;;
+  esac
+
+  tag="$(curl -fsSL https://api.github.com/repos/charmbracelet/glow/releases/latest | jq -r .tag_name)"
+  asset="glow_${tag#v}_linux_${arch}.tar.gz"
+  url="https://github.com/charmbracelet/glow/releases/download/${tag}/${asset}"
+
+  tmpdir="$(mktemp -d)"
+  curl -fsSL "$url" -o "${tmpdir}/glow.tgz"
+  tar -xzf "${tmpdir}/glow.tgz" -C "${tmpdir}"
+  install -m 0755 "${tmpdir}/glow" "${BOOTSTRAP_BIN}/glow"
+  rm -rf "${tmpdir}"
+}
+
 install_delta() {
   if require_cmd delta; then
     log "delta already installed."
@@ -1337,6 +1362,11 @@ fi
 # Dev session (tmux: claude|shell|files|help tabs)
 alias dev='dev-session'
 
+# Markdown rendering
+if command -v glow >/dev/null 2>&1; then
+  alias md='glow'
+fi
+
 # Yazi file manager with cd on exit
 if command -v yazi >/dev/null 2>&1; then
   function y() {
@@ -1557,6 +1587,7 @@ main() {
   generate_secrets_template
   prompt_for_credentials
   install_apt_packages
+  install_glow
   install_delta
   install_atuin
   install_yazi
