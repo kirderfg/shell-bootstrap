@@ -1132,10 +1132,10 @@ configure_shell_reference() {
 │ p/P           Paste / paste overwrite            │  │ Ctrl+T        Fuzzy find files, insert path      │
 │ d/D           Trash / delete permanently         │  │ Alt+C         Fuzzy cd into subdirectory         │
 │ a/r           Create / rename                    │  │ **<Tab>       Trigger fzf completion             │
-│ W             Open in Windows (wslview)          │                                                      │
-│ O             Open with... (choose opener)       │                                                      │
+│ o/O           Open / open with picker            │                                                      │
+│ w/W           Open in Windows (wslview)          │                                                      │
 │ /n/N          Find / next/prev match             │  └──────────────────────────────────────────────────┘
-│ on/os/om      Sort: name/size/modified           │
+│ sn/ss/sm      Sort: name/size/modified           │
 │ q             Quit                               │  ┌─ TMUX (Ctrl+A = prefix) ─────────────────────────┐
 └──────────────────────────────────────────────────┘  │ dev           Dev session (3 tabs)               │
                                                       │ Ctrl+A c      Create window                      │
@@ -1151,13 +1151,27 @@ configure_shell_reference() {
 │ ll/la         Long list with hidden files        │  ┌─ CLAUDE CODE ──────────────────────────────────────┐
 │ lt/lS         List by time/size                  │  │ claude        Start Claude Code                  │
 │ ../...        Go up 1/2 directories              │  │ claude -c     Continue last session              │
-│ take <dir>    Create dir and cd into it          │  │ /help         Show all slash commands            │
-│ extract <f>   Extract any archive                │  │ /model X      Switch model (opus/sonnet/haiku)   │
-│ ff <name>     Find file by name                  │  │ /compact      Compress context                   │
-│ path          Show PATH one per line             │  │ @file.txt     Include file in prompt             │
-│ duf           Disk usage sorted                  │  │ ! <cmd>       Run shell command inline           │
-│ h/help        History / this reference           │  │ Ctrl+C/D      Cancel / exit                      │
-└──────────────────────────────────────────────────┘  └──────────────────────────────────────────────────┘
+│ take <dir>    Create dir and cd into it          │  │ claude -p X   Use specific profile               │
+│ extract <f>   Extract any archive                │  │ claude --dangerously-skip-permissions            │
+│ ff <name>     Find file by name                  │  │               Unattended mode (no prompts)       │
+│ path          Show PATH one per line             │  │ ─ Slash Commands ─                               │
+│ duf           Disk usage sorted                  │  │ /help         Show all slash commands            │
+│ h/help        History / this reference           │  │ /model X      Switch model (opus/sonnet/haiku)   │
+└──────────────────────────────────────────────────┘  │ /compact      Compress context                   │
+                                                      │ /clear        Clear conversation history         │
+┌─ CLAUDE CODE (continued) ───────────────────────┐  │ /cost         Show session token costs           │
+│ ─ Include Content ─                              │  │ /doctor       Diagnose setup issues              │
+│ @file.txt     Include file in prompt             │  │ /vim          Enable vim keybindings             │
+│ @folder/      Include directory structure        │  │ /init         Create CLAUDE.md for project       │
+│ ! <cmd>       Run shell command inline           │  │ ─ Keyboard ─                                     │
+│ ─ Piping ─                                       │  │ Tab           Accept autocomplete suggestion     │
+│ claude "msg" < file     Pipe file to prompt      │  │ Ctrl+C        Cancel current operation           │
+│ git diff | claude "..."  Pipe command output     │  │ Ctrl+D        Exit Claude Code                   │
+│ ─ Quick Patterns ─                               │  │ Esc Esc       Interrupt generation               │
+│ claude "explain" < error.log                     │  └──────────────────────────────────────────────────┘
+│ claude "review" < <(git diff --staged)           │
+│ claude "commit msg" < <(git diff --staged)       │
+└──────────────────────────────────────────────────┘
 
 ┌─ WINDOWS TERMINAL ───────────────────────────────┐
 │ Ctrl+Tab       Next tab                          │
