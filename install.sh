@@ -70,7 +70,7 @@ prompt_for_credentials() {
   local need_prompts=false
 
   # Check if any credentials are missing
-  if [[ -z "${ATUIN_PASSWORD:-}" || -z "${ATUIN_KEY:-}" || -z "${PET_SNIPPETS_TOKEN:-}" ]]; then
+  if [[ -z "${ATUIN_USERNAME:-}" || -z "${ATUIN_PASSWORD:-}" || -z "${ATUIN_KEY:-}" || -z "${PET_SNIPPETS_TOKEN:-}" ]]; then
     need_prompts=true
   fi
 
@@ -98,34 +98,54 @@ EOF
   fi
 
   # Prompt for Atuin credentials if not set
-  if [[ -z "${ATUIN_KEY:-}" ]]; then
+  if [[ -z "${ATUIN_USERNAME:-}" || -z "${ATUIN_PASSWORD:-}" || -z "${ATUIN_KEY:-}" ]]; then
     echo "ATUIN SYNC - Sync shell history across machines"
-    echo "  Get your key from: atuin key (on a logged-in machine)"
-    echo "  Or register first: atuin register"
+    echo "  Already have an account? Enter credentials below."
+    echo "  New user? Run 'atuin register' after install, then re-run install.sh"
     echo ""
-    read -rp "  Atuin encryption key (blank to skip): " input_key
-    if [[ -n "$input_key" ]]; then
-      export ATUIN_KEY="$input_key"
-      if ! grep -q "^export ATUIN_KEY=" "$secrets_file" 2>/dev/null; then
-        echo "export ATUIN_KEY=\"$input_key\"" >> "$secrets_file"
-      else
-        sed -i "s|^export ATUIN_KEY=.*|export ATUIN_KEY=\"$input_key\"|" "$secrets_file"
-      fi
-      log "  Saved ATUIN_KEY to secrets.env"
-    fi
-  fi
 
-  if [[ -z "${ATUIN_PASSWORD:-}" && -n "${ATUIN_KEY:-}" ]]; then
-    read -rsp "  Atuin password (blank to skip): " input_pass
-    echo ""
-    if [[ -n "$input_pass" ]]; then
-      export ATUIN_PASSWORD="$input_pass"
-      if ! grep -q "^export ATUIN_PASSWORD=" "$secrets_file" 2>/dev/null; then
-        echo "export ATUIN_PASSWORD=\"$input_pass\"" >> "$secrets_file"
-      else
-        sed -i "s|^export ATUIN_PASSWORD=.*|export ATUIN_PASSWORD=\"$input_pass\"|" "$secrets_file"
+    # Username
+    if [[ -z "${ATUIN_USERNAME:-}" ]]; then
+      read -rp "  Atuin username [${DEFAULT_ATUIN_USERNAME}]: " input_user
+      input_user="${input_user:-$DEFAULT_ATUIN_USERNAME}"
+      if [[ -n "$input_user" ]]; then
+        export ATUIN_USERNAME="$input_user"
+        if ! grep -q "^export ATUIN_USERNAME=" "$secrets_file" 2>/dev/null; then
+          echo "export ATUIN_USERNAME=\"$input_user\"" >> "$secrets_file"
+        else
+          sed -i "s|^export ATUIN_USERNAME=.*|export ATUIN_USERNAME=\"$input_user\"|" "$secrets_file"
+        fi
+        log "  Saved ATUIN_USERNAME to secrets.env"
       fi
-      log "  Saved ATUIN_PASSWORD to secrets.env"
+    fi
+
+    # Password
+    if [[ -z "${ATUIN_PASSWORD:-}" ]]; then
+      read -rsp "  Atuin password (blank to skip): " input_pass
+      echo ""
+      if [[ -n "$input_pass" ]]; then
+        export ATUIN_PASSWORD="$input_pass"
+        if ! grep -q "^export ATUIN_PASSWORD=" "$secrets_file" 2>/dev/null; then
+          echo "export ATUIN_PASSWORD=\"$input_pass\"" >> "$secrets_file"
+        else
+          sed -i "s|^export ATUIN_PASSWORD=.*|export ATUIN_PASSWORD=\"$input_pass\"|" "$secrets_file"
+        fi
+        log "  Saved ATUIN_PASSWORD to secrets.env"
+      fi
+    fi
+
+    # Key (optional - will be auto-captured after login)
+    if [[ -z "${ATUIN_KEY:-}" ]]; then
+      read -rp "  Atuin encryption key (blank to auto-capture after login): " input_key
+      if [[ -n "$input_key" ]]; then
+        export ATUIN_KEY="$input_key"
+        if ! grep -q "^export ATUIN_KEY=" "$secrets_file" 2>/dev/null; then
+          echo "export ATUIN_KEY=\"$input_key\"" >> "$secrets_file"
+        else
+          sed -i "s|^export ATUIN_KEY=.*|export ATUIN_KEY=\"$input_key\"|" "$secrets_file"
+        fi
+        log "  Saved ATUIN_KEY to secrets.env"
+      fi
     fi
   fi
 
@@ -669,17 +689,43 @@ EOF
     return
   fi
 
+  local secrets_file="${BOOTSTRAP_HOME}/secrets.env"
+
   # Attempt non-interactive login if secrets are present
-  if [[ -n "${ATUIN_PASSWORD:-}" && -n "${ATUIN_KEY:-}" ]]; then
+  if [[ -n "${ATUIN_PASSWORD:-}" && -n "${ATUIN_USERNAME:-}" ]]; then
     log "Attempting Atuin login..."
     set +e
-    if atuin login -u "${ATUIN_USERNAME}" -p "${ATUIN_PASSWORD}" -k "${ATUIN_KEY}" 2>/dev/null; then
-      log "Atuin login successful!"
-      atuin sync
-      log "Atuin history synced."
+
+    # If we have the key, use it; otherwise login will prompt/generate
+    if [[ -n "${ATUIN_KEY:-}" ]]; then
+      if atuin login -u "${ATUIN_USERNAME}" -p "${ATUIN_PASSWORD}" -k "${ATUIN_KEY}" 2>/dev/null; then
+        log "Atuin login successful!"
+      else
+        log "Atuin login failed. Check credentials in: ${BOOTSTRAP_HOME}/secrets.env"
+      fi
     else
-      log "Atuin login failed. Check credentials in: ${BOOTSTRAP_HOME}/secrets.env"
+      # Login without key - atuin will use existing or prompt
+      if atuin login -u "${ATUIN_USERNAME}" -p "${ATUIN_PASSWORD}" 2>/dev/null; then
+        log "Atuin login successful!"
+      else
+        log "Atuin login failed. Check credentials in: ${BOOTSTRAP_HOME}/secrets.env"
+      fi
     fi
+
+    # Auto-capture and save the key after successful login
+    local captured_key
+    captured_key=$(atuin key 2>/dev/null || true)
+    if [[ -n "$captured_key" && "$captured_key" != "${ATUIN_KEY:-}" ]]; then
+      export ATUIN_KEY="$captured_key"
+      if ! grep -q "^export ATUIN_KEY=" "$secrets_file" 2>/dev/null; then
+        echo "export ATUIN_KEY=\"$captured_key\"" >> "$secrets_file"
+      else
+        sed -i "s|^export ATUIN_KEY=.*|export ATUIN_KEY=\"$captured_key\"|" "$secrets_file"
+      fi
+      log "Auto-captured ATUIN_KEY to secrets.env"
+    fi
+
+    atuin sync 2>/dev/null && log "Atuin history synced." || true
     set -e
   else
     log "Atuin sync not configured. Run 'atuin register' or re-run install.sh with credentials."
@@ -1450,6 +1496,7 @@ generate_secrets_template() {
 # Get your key from a machine where you're logged in: atuin key
 # Or register at: https://atuin.sh
 #
+# export ATUIN_USERNAME="your_atuin_username"
 # export ATUIN_PASSWORD="your_atuin_password"
 # export ATUIN_KEY="your_atuin_encryption_key"
 
