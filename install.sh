@@ -985,24 +985,25 @@ configure_github() {
 
   local helper_script="${HOME}/.local/bin/git-credential-github-token"
   cat > "$helper_script" <<'CREDHELPER'
-#!/bin/bash
+#!/usr/bin/env bash
 # Git credential helper that uses GITHUB_TOKEN from environment or 1Password
 # Created by shell-bootstrap
 
 # Load token from 1Password if available
-if [[ -f "$HOME/.config/dev_env/op-secrets.sh" ]]; then
-  source "$HOME/.config/dev_env/op-secrets.sh" 2>/dev/null
+if [ -f "$HOME/.config/dev_env/op-secrets.sh" ]; then
+  . "$HOME/.config/dev_env/op-secrets.sh" 2>/dev/null
 fi
 
 # Only respond to get requests for github.com
-if [[ "$1" == "get" ]]; then
+if [ "$1" = "get" ]; then
+  GITHUB_HOST=""
   while read -r line; do
     case "$line" in
       host=github.com) GITHUB_HOST=1 ;;
     esac
   done
 
-  if [[ -n "$GITHUB_HOST" && -n "${GITHUB_TOKEN:-}" ]]; then
+  if [ -n "$GITHUB_HOST" ] && [ -n "${GITHUB_TOKEN:-}" ]; then
     echo "protocol=https"
     echo "host=github.com"
     echo "username=x-access-token"
