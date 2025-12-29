@@ -749,6 +749,11 @@ configure_op() {
 # 1Password secrets loader - source this file to load secrets on-demand
 # Secrets are fetched from 1Password and never touch disk
 
+# Load token from file if not in environment (for DevPod/container persistence)
+if [ -z "$OP_SERVICE_ACCOUNT_TOKEN" ] && [ -f ~/.config/dev_env/op_token ]; then
+    export OP_SERVICE_ACCOUNT_TOKEN="$(cat ~/.config/dev_env/op_token)"
+fi
+
 OP_VAULT="${OP_VAULT:-DEV_CLI}"
 
 op-check() {
