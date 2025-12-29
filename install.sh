@@ -1071,12 +1071,23 @@ echo "${PET_SNIPPETS_TOKEN}"
 EOF
     chmod 700 "$askpass"
 
+    # Disable any credential helpers (including devpod's) to avoid conflicts
+    # Use only our GIT_ASKPASS for authentication
     if [[ -d "${local_repo}/.git" ]]; then
       log "Updating pet snippets repo..."
-      (cd "${local_repo}" && GIT_ASKPASS="$askpass" GIT_TERMINAL_PROMPT=0 git pull --rebase) || true
+      (cd "${local_repo}" && \
+        GIT_ASKPASS="$askpass" \
+        GIT_TERMINAL_PROMPT=0 \
+        GIT_CONFIG_GLOBAL=/dev/null \
+        GIT_CONFIG_SYSTEM=/dev/null \
+        git -c credential.helper= pull --rebase) || true
     else
       log "Cloning pet snippets repo..."
-      GIT_ASKPASS="$askpass" GIT_TERMINAL_PROMPT=0 git clone "${repo_with_user}" "${local_repo}" || true
+      GIT_ASKPASS="$askpass" \
+        GIT_TERMINAL_PROMPT=0 \
+        GIT_CONFIG_GLOBAL=/dev/null \
+        GIT_CONFIG_SYSTEM=/dev/null \
+        git -c credential.helper= clone "${repo_with_user}" "${local_repo}" || true
     fi
     rm -f "$askpass"
 
