@@ -789,18 +789,18 @@ op-load-all-secrets() {
     local loaded=0 failed=0
 
     # Atuin credentials
-    op-load-secret ATUIN_KEY "op://${OP_VAULT}/Atuin/key" && ((loaded++)) || ((failed++))
-    op-load-secret ATUIN_PASSWORD "op://${OP_VAULT}/Atuin/password" && ((loaded++)) || ((failed++))
-    op-load-secret ATUIN_USERNAME "op://${OP_VAULT}/Atuin/username" && ((loaded++)) || ((failed++))
+    op-load-secret ATUIN_KEY "op://${OP_VAULT}/Atuin/key" && loaded=$((loaded + 1)) || failed=$((failed + 1))
+    op-load-secret ATUIN_PASSWORD "op://${OP_VAULT}/Atuin/password" && loaded=$((loaded + 1)) || failed=$((failed + 1))
+    op-load-secret ATUIN_USERNAME "op://${OP_VAULT}/Atuin/username" && loaded=$((loaded + 1)) || failed=$((failed + 1))
 
     # Pet snippets
-    op-load-secret PET_SNIPPETS_TOKEN "op://${OP_VAULT}/Pet/PAT" && ((loaded++)) || ((failed++))
+    op-load-secret PET_SNIPPETS_TOKEN "op://${OP_VAULT}/Pet/PAT" && loaded=$((loaded + 1)) || failed=$((failed + 1))
 
     # OpenAI
-    op-load-secret OPENAI_API_KEY "op://${OP_VAULT}/OpenAI/api_key" && ((loaded++)) || ((failed++))
+    op-load-secret OPENAI_API_KEY "op://${OP_VAULT}/OpenAI/api_key" && loaded=$((loaded + 1)) || failed=$((failed + 1))
 
     # GitHub token
-    op-load-secret GITHUB_TOKEN "op://${OP_VAULT}/GitHub/PAT" && ((loaded++)) || ((failed++))
+    op-load-secret GITHUB_TOKEN "op://${OP_VAULT}/GitHub/PAT" && loaded=$((loaded + 1)) || failed=$((failed + 1))
 
     echo "[op-secrets] Loaded ${loaded} secrets (${failed} not found/configured)" >&2
     return 0
