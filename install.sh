@@ -1424,9 +1424,9 @@ configure_shell_reference() {
 ┌─ DEVPOD (Remote Containers) ─────────────────────┐  ┌─ AZURE VM ───────────────────────────────────────┐
 │ ─ Create Workspace (with secrets) ─              │  │ ssh dev-vm         SSH to dev VM                 │
 │ devpod up github.com/user/repo \                 │  │ az vm start ...    Start VM                      │
-│   --provider ssh -o HOST=dev-vm \                │  │ az vm deallocate   Stop VM (save costs)          │
-│   --env OP_SERVICE_ACCOUNT_TOKEN=\               │  │ az vm show ...     Check VM status               │
-│   $(cat ~/.config/dev_env/op_token)              │  │                                                   │
+│   --provider ssh --provider-option HOST=dev-vm \ │  │ az vm deallocate   Stop VM (save costs)          │
+│   --ide none --workspace-env \                   │  │ az vm show ...     Check VM status               │
+│   OP_SERVICE_ACCOUNT_TOKEN=$(cat op_token)       │  │                                                   │
 │                                                  │  │ ─ Scripts (from dev_env/) ─                      │
 │ ─ Manage Workspaces ─                            │  │ ./scripts/start-vm.sh      Start VM              │
 │ devpod list          List all workspaces         │  │ ./scripts/stop-vm.sh       Stop VM               │
