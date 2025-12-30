@@ -967,10 +967,10 @@ configure_github() {
     return
   fi
 
-  # Check if already authenticated (not via env var)
-  if gh auth status &>/dev/null && [[ -z "${GITHUB_TOKEN:-}" ]]; then
+  # Check if already authenticated
+  if gh auth status &>/dev/null; then
     log "GitHub CLI already authenticated."
-    git config --global credential.helper "!gh auth git-credential"
+    gh auth setup-git 2>/dev/null || true
     log "Git configured to use GitHub CLI for authentication."
     return
   fi
@@ -985,45 +985,15 @@ configure_github() {
     return
   fi
 
-  # GITHUB_TOKEN is set - create a credential helper that uses it
-  log "Setting up git credentials with GITHUB_TOKEN..."
-
-  local helper_script="${HOME}/.local/bin/git-credential-github-token"
-  cat > "$helper_script" <<'CREDHELPER'
-#!/usr/bin/env bash
-# Git credential helper that uses GITHUB_TOKEN from environment or 1Password
-# Created by shell-bootstrap
-
-# Load token from 1Password if available
-if [ -f "$HOME/.config/dev_env/op-secrets.sh" ]; then
-  . "$HOME/.config/dev_env/op-secrets.sh" 2>/dev/null
-fi
-
-# Only respond to get requests for github.com
-if [ "$1" = "get" ]; then
-  GITHUB_HOST=""
-  while read -r line; do
-    case "$line" in
-      host=github.com) GITHUB_HOST=1 ;;
-    esac
-  done
-
-  if [ -n "$GITHUB_HOST" ] && [ -n "${GITHUB_TOKEN:-}" ]; then
-    echo "protocol=https"
-    echo "host=github.com"
-    echo "username=x-access-token"
-    echo "password=${GITHUB_TOKEN}"
+  # GITHUB_TOKEN is set - authenticate gh CLI persistently
+  log "Authenticating GitHub CLI with token..."
+  if echo "${GITHUB_TOKEN}" | gh auth login --with-token 2>/dev/null; then
+    log "GitHub CLI authenticated successfully."
+    gh auth setup-git 2>/dev/null || true
+    log "Git configured to use GitHub CLI for authentication."
+  else
+    log "GitHub CLI authentication failed. Token may be invalid."
   fi
-fi
-CREDHELPER
-  chmod +x "$helper_script"
-
-  # Configure git to use the helper
-  git config --global credential.helper "$helper_script"
-  log "Git configured with GITHUB_TOKEN credential helper."
-
-  # gh CLI will use GITHUB_TOKEN from environment automatically
-  log "GitHub CLI will use GITHUB_TOKEN from environment."
 }
 
 configure_pet() {
