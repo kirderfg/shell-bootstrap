@@ -1493,6 +1493,20 @@ configure_shell_reference() {
 SHELL_REF
 }
 
+write_zshenv() {
+  log "Writing ~/.zshenv for early TERM fix..."
+  # ~/.zshenv is sourced FIRST for ALL zsh invocations (even non-interactive)
+  # This ensures TERM is set before tmux or any other tool queries terminal capabilities
+  cat > "${HOME}/.zshenv" <<'ZSHENV'
+# Fix TERM for devcontainers/SSH where TERM=dumb breaks terminal features
+# This runs before any other zsh config (even non-interactive shells)
+# Critical for tmux to work properly with escape sequences and colors
+if [[ "$TERM" == "dumb" || -z "$TERM" ]]; then
+  export TERM=xterm-256color
+fi
+ZSHENV
+}
+
 write_bootstrap_zshrc() {
   log "Writing bootstrap zshrc fragment..."
   cat > "${BOOTSTRAP_HOME}/zshrc" <<EOF
@@ -1898,6 +1912,7 @@ main() {
   configure_shell_reference
   configure_claude_code
 
+  write_zshenv
   write_bootstrap_zshrc
   wire_user_shell_rc_files
   try_set_default_shell_zsh
