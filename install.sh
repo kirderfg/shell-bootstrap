@@ -1480,6 +1480,17 @@ write_bootstrap_zshrc() {
 # shell-bootstrap zsh config
 
 # ============================================================================
+# Fix TERM for devcontainers and non-interactive shells
+# ============================================================================
+# Devcontainer base images (e.g., mcr.microsoft.com/devcontainers/*) default to
+# TERM=dumb, which breaks terminal features like colors, cursor shapes, and
+# causes escape sequence leakage (e.g., ^[[>0;10;1c). Fix early before any
+# terminal tools (starship, atuin, vi-mode cursors) run.
+if [[ "\$TERM" == "dumb" || -z "\$TERM" ]]; then
+  export TERM=xterm-256color
+fi
+
+# ============================================================================
 # WSLg Wayland Setup (native Wayland for better performance)
 # ============================================================================
 if [[ -d /mnt/wslg ]]; then
