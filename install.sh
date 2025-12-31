@@ -1342,37 +1342,33 @@ TMUX_CONF
 SESSION="dev"
 WORKING_DIR="${1:-$(pwd)}"
 
-# Ensure proper TERM before starting tmux (fixes devcontainer TERM=dumb issues)
+# Ensure proper TERM and locale before starting tmux
 if [[ "$TERM" == "dumb" || -z "$TERM" ]]; then
   export TERM=xterm-256color
 fi
+export LANG=en_US.UTF-8
+export LC_ALL=en_US.UTF-8
 
-# Check if session exists
+# Check if session exists (use -u to force UTF-8 for Unicode characters)
 if tmux has-session -t "$SESSION" 2>/dev/null; then
-  tmux attach-session -t "$SESSION"
+  tmux -u attach-session -t "$SESSION"
   exit 0
 fi
 
-# Tab 1: Claude
-tmux new-session -d -s "$SESSION" -n "claude" -c "$WORKING_DIR"
-tmux send-keys "claude" Enter
+# Use -u flag to force UTF-8 support (fixes Unicode box-drawing chars as underscores)
+tmux -u new-session -d -s "$SESSION" -n "claude" -c "$WORKING_DIR"
+tmux send-keys -t "$SESSION" "claude" Enter
 
-# Tab 2: zsh shell
 tmux new-window -t "$SESSION" -n "shell" -c "$WORKING_DIR"
 
-# Tab 3: yazi file manager
 tmux new-window -t "$SESSION" -n "files" -c "$WORKING_DIR"
-tmux send-keys "yazi" Enter
+tmux send-keys -t "$SESSION:files" "yazi" Enter
 
-# Tab 4: reference/shortcuts
 tmux new-window -t "$SESSION" -n "help"
-tmux send-keys "less -R ~/.config/shell-bootstrap/shell-reference.txt" Enter
+tmux send-keys -t "$SESSION:help" "less -R ~/.config/shell-bootstrap/shell-reference.txt" Enter
 
-# Start on Claude tab
 tmux select-window -t "$SESSION:1"
-
-# Attach to session
-tmux attach-session -t "$SESSION"
+tmux -u attach-session -t "$SESSION"
 DEV_SESSION
 
   chmod +x "${dev_script}"
