@@ -1340,7 +1340,20 @@ TMUX_CONF
 # Dev session - Four tabs: claude, shell, files, help
 
 SESSION="dev"
-WORKING_DIR="${1:-$(pwd)}"
+
+# Auto-detect workspace directory
+if [[ -n "$1" ]]; then
+  WORKING_DIR="$1"
+elif [[ -d /workspaces ]]; then
+  # Find first git repo in /workspaces
+  for dir in /workspaces/*/; do
+    if [[ -d "${dir}.git" ]]; then
+      WORKING_DIR="$dir"
+      break
+    fi
+  done
+fi
+WORKING_DIR="${WORKING_DIR:-$(pwd)}"
 
 # Ensure proper TERM and locale before starting tmux
 if [[ "$TERM" == "dumb" || -z "$TERM" ]]; then
@@ -1494,7 +1507,7 @@ SHELL_REF
 }
 
 write_zshenv() {
-  log "Writing ~/.zshenv for early TERM fix..."
+  log "Writing ~/.zshenv for early TERM fix and workspace cd..."
   # ~/.zshenv is sourced FIRST for ALL zsh invocations (even non-interactive)
   # This ensures TERM is set before tmux or any other tool queries terminal capabilities
   cat > "${HOME}/.zshenv" <<'ZSHENV'
@@ -1503,6 +1516,17 @@ write_zshenv() {
 # Critical for tmux to work properly with escape sequences and colors
 if [[ "$TERM" == "dumb" || -z "$TERM" ]]; then
   export TERM=xterm-256color
+fi
+
+# Auto-cd to workspace directory on login (for devcontainers)
+if [[ -d /workspaces ]] && [[ "$PWD" == "$HOME" ]]; then
+  # Find first directory in /workspaces that has a .git
+  for dir in /workspaces/*/; do
+    if [[ -d "${dir}.git" ]]; then
+      cd "$dir"
+      break
+    fi
+  done
 fi
 ZSHENV
 }
