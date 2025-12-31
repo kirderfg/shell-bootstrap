@@ -1274,8 +1274,8 @@ set -ga terminal-overrides ",xterm-256color:Tc:RGB"
 set -ga terminal-overrides ",*256col*:Tc:RGB"
 set -ga terminal-overrides ",*:Ss=\\E[%p1%d q:Se=\\E[2 q"
 
-# Allow passthrough of escape sequences (tmux 3.3+)
-set -g allow-passthrough on
+# Note: allow-passthrough disabled - causes flickering with Claude Code
+# set -g allow-passthrough on
 
 # Ensure TERM updates are picked up
 set -g update-environment "TERM TERM_PROGRAM TERM_PROGRAM_VERSION"
