@@ -1237,6 +1237,10 @@ configure_tmux() {
   cat > "${tmux_conf}" <<'TMUX_CONF'
 # tmux configuration - shell-bootstrap
 
+# Use zsh as default shell (not system default which may be bash)
+set -g default-shell /usr/bin/zsh
+set -g default-command /usr/bin/zsh
+
 # Use Ctrl+A as prefix (easier than Ctrl+B)
 unbind C-b
 set -g prefix C-a
