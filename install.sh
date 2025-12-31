@@ -1258,9 +1258,23 @@ set -g history-limit 50000
 # Faster escape time (for vim)
 set -sg escape-time 10
 
-# Enable 256 colors and true color
+# Terminal settings for proper color and escape sequence handling
 set -g default-terminal "tmux-256color"
-set -ga terminal-overrides ",*256col*:Tc"
+
+# Terminal capability overrides for outer terminal
+# Tc: True color support
+# RGB: RGB color mode
+# Ss/Se: Cursor shape (DECSCUSR)
+# smxx: Strikethrough
+set -ga terminal-overrides ",xterm-256color:Tc:RGB"
+set -ga terminal-overrides ",*256col*:Tc:RGB"
+set -ga terminal-overrides ",*:Ss=\\E[%p1%d q:Se=\\E[2 q"
+
+# Allow passthrough of escape sequences (tmux 3.3+)
+set -g allow-passthrough on
+
+# Ensure TERM updates are picked up
+set -g update-environment "TERM TERM_PROGRAM TERM_PROGRAM_VERSION"
 
 # Status bar styling
 set -g status-style 'bg=#1a1b26 fg=#c0caf5'
@@ -1323,6 +1337,11 @@ TMUX_CONF
 
 SESSION="dev"
 WORKING_DIR="${1:-$(pwd)}"
+
+# Ensure proper TERM before starting tmux (fixes devcontainer TERM=dumb issues)
+if [[ "$TERM" == "dumb" || -z "$TERM" ]]; then
+  export TERM=xterm-256color
+fi
 
 # Check if session exists
 if tmux has-session -t "$SESSION" 2>/dev/null; then
