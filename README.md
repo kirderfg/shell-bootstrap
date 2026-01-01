@@ -1,13 +1,12 @@
 # shell-bootstrap
 
-One-command shell setup for WSL Ubuntu and GitHub Codespaces. Installs and configures a modern, productive terminal environment.
+One-command shell setup for WSL Ubuntu, devcontainers, and GitHub Codespaces. Installs and configures a modern, productive terminal environment with 1Password-based secrets management.
 
 ## What's Included
 
 | Tool | Purpose |
 |------|---------|
-| **Kitty** | GPU-accelerated terminal with splits |
-| **zsh** | Primary shell with sensible defaults |
+| **zsh** | Primary shell with vi-mode |
 | **Starship** | Fast, customizable prompt |
 | **Atuin** | Searchable shell history with sync |
 | **pet** | Snippet manager (Ctrl+S to search) |
@@ -18,7 +17,10 @@ One-command shell setup for WSL Ubuntu and GitHub Codespaces. Installs and confi
 | **fd** | Fast file finder |
 | **bat** | Syntax-highlighted cat |
 | **delta** | Better git diffs |
+| **glow** | Markdown renderer in terminal |
 | **direnv** | Per-directory environments |
+| **1Password CLI** | Secrets management (`op`) |
+| **GitHub CLI** | GitHub operations (`gh`) |
 | **Claude Code** | AI coding assistant |
 
 ## Quick Install
@@ -39,41 +41,37 @@ git clone https://github.com/kirderfg/shell-bootstrap.git ~/shell-bootstrap
 exec zsh
 ```
 
-## Post-Install Setup (Optional)
+## 1Password Integration
 
-### Enable History Sync (Atuin)
+Shell-bootstrap uses 1Password for secrets management. Secrets are fetched on-demand and never stored as plaintext.
 
-1. Get your encryption key from an existing machine:
-   ```bash
-   atuin key
-   ```
+### Required 1Password Items (in `DEV_CLI` vault)
 
-2. Edit secrets file:
-   ```bash
-   nano ~/.config/shell-bootstrap/secrets.env
-   ```
+| Item | Field | Purpose |
+|------|-------|---------|
+| `Atuin` | `username`, `password`, `key` | Shell history sync |
+| `Pet` | `PAT` | Snippets repo access |
+| `GitHub` | `PAT` | GitHub CLI + git credentials |
+| `OpenAI` | `api_key` | OpenAI API key (exported) |
 
-3. Add your credentials:
-   ```bash
-   export ATUIN_PASSWORD="your_password"
-   export ATUIN_KEY="your_encryption_key"
-   ```
+### Setup
 
-4. Re-run installer:
-   ```bash
-   ~/shell-bootstrap/install.sh
-   ```
+1. Create a Service Account at: 1Password → Settings → Developer → Service Accounts
+2. Grant access to the `DEV_CLI` vault
+3. Run the installer - it will prompt for your token
 
-### Enable Snippet Sync (Pet)
+### Non-Interactive Mode (for CI/devcontainers)
 
-1. Create a GitHub Personal Access Token at https://github.com/settings/tokens
+```bash
+export OP_SERVICE_ACCOUNT_TOKEN="ops_eyJ..."
+SHELL_BOOTSTRAP_NONINTERACTIVE=1 bash install.sh
+```
 
-2. Add to secrets file:
-   ```bash
-   export PET_SNIPPETS_TOKEN="ghp_your_token"
-   ```
-
-3. Re-run installer
+Environment variables used in non-interactive mode:
+- `OP_SERVICE_ACCOUNT_TOKEN` - 1Password service account token
+- `ATUIN_USERNAME`, `ATUIN_PASSWORD`, `ATUIN_KEY` - Atuin credentials
+- `GITHUB_TOKEN` - GitHub authentication
+- `PET_SNIPPETS_TOKEN` - Pet snippets repo access
 
 ## Key Shortcuts
 
@@ -84,24 +82,11 @@ exec zsh
 | `z <dir>` | Jump to directory (zoxide) |
 | `zi` | Interactive directory picker |
 
-### Kitty Terminal Shortcuts
-
-| Shortcut | Action |
-|----------|--------|
-| `Ctrl+Shift+\` | Vertical split |
-| `Ctrl+Shift+-` | Horizontal split |
-| `Ctrl+Shift+H/J/K/L` | Navigate splits |
-| `Ctrl+Alt+H/J/K/L` | Resize splits |
-| `Ctrl+Shift+Z` | Toggle fullscreen (stack) |
-| `Ctrl+Shift+E` | Open file manager (yazi) |
-| `Ctrl+Shift+T` | New tab |
-| `Ctrl+Alt+1-5` | Switch to tab 1-5 |
-
 ### Tmux Shortcuts (Ctrl+A = prefix)
 
 | Shortcut | Action |
 |----------|--------|
-| `dev` | Launch dev session (Claude + yazi + shell) |
+| `dev` | Launch dev session (claude + yazi + shell) |
 | `Ctrl+A c` | Create new window |
 | `Ctrl+A \|` | Split vertically |
 | `Ctrl+A -` | Split horizontally |
@@ -113,8 +98,10 @@ exec zsh
 | `Ctrl+A r` | Reload tmux config |
 
 **Dev Session Layout:**
-- Window 1 "workspace": Claude (2/3 left) | yazi (top right) + shell (bottom right)
-- Window 2 "reference": Keyboard shortcuts reference card
+- Window 1 "claude": Claude Code
+- Window 2 "shell": Shell
+- Window 3 "files": Yazi file manager
+- Window 4 "help": Keyboard shortcuts reference
 
 ## Aliases
 
@@ -125,9 +112,9 @@ exec zsh
 | `lt` | `ls -lAFht` (sorted by time) |
 | `gs` | `git status` |
 | `gd` | `git diff` |
+| `gds` | `git diff --staged` |
+| `gp` | `git pull` |
 | `..` | `cd ..` |
-| `kdev` | Launch kitty with dev layout |
-| `icat` | Display images in kitty |
 
 ## Useful Functions
 
@@ -137,22 +124,23 @@ exec zsh
 | `extract file.tar.gz` | Extract any archive format |
 | `prev` | Save last command as pet snippet |
 | `y` | Yazi file manager (cd on exit) |
+| `help` | Show full keyboard shortcuts reference |
 
 ## File Locations
 
 | Path | Purpose |
 |------|---------|
 | `~/.tmux.conf` | Tmux config (Ctrl+A prefix) |
-| `~/.config/kitty/kitty.conf` | Kitty terminal config |
-| `~/.config/kitty/dev.session` | Dev layout session |
 | `~/.config/yazi/` | Yazi file manager config |
 | `~/.config/shell-bootstrap/zshrc` | Main zsh config |
-| `~/.config/shell-bootstrap/secrets.env` | Sync credentials |
 | `~/.config/shell-bootstrap/shell-reference.txt` | Shortcuts reference |
+| `~/.config/dev_env/op_token` | 1Password service account token |
+| `~/.config/dev_env/init.sh` | Shell startup secrets loader |
 | `~/.config/starship.toml` | Prompt config |
 | `~/.config/atuin/config.toml` | History config |
 | `~/.config/pet/snippet.toml` | Saved snippets |
 | `~/.claude/settings.json` | Claude Code config |
+| `~/CLAUDE.md` | Claude Code tips and tricks |
 
 ## Documentation
 
@@ -160,7 +148,7 @@ See [zsh_readme.md](zsh_readme.md) for detailed tips & tricks for all installed 
 
 ## Requirements
 
-- Ubuntu (WSL or native) or GitHub Codespaces
+- Ubuntu (WSL, native, or devcontainer)
 - Internet connection for initial install
 - ~500MB disk space
 
