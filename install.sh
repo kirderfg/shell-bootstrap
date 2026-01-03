@@ -302,6 +302,11 @@ install_yazi() {
 }
 
 install_op() {
+  # Skip in devpod containers (secrets are injected as env vars by dp.sh)
+  if [[ -n "${SHELL_BOOTSTRAP_SKIP_1PASSWORD:-}" ]]; then
+    log "Skipping 1Password CLI (SHELL_BOOTSTRAP_SKIP_1PASSWORD set)"
+    return
+  fi
   if require_cmd op; then
     log "1Password CLI already installed."
     return
